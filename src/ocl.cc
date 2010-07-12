@@ -242,12 +242,16 @@ CLMemBuffer *CLProgram::get_arg_buffer(int arg)
 
 bool CLProgram::build()
 {
-	char errlog[512];
+	int err;
 
+	if((err = clBuildProgram(prog, 0, 0, 0, 0, 0)) != 0) {
+		size_t sz;
+		clGetProgramBuildInfo(prog, devinf.id, CL_PROGRAM_BUILD_LOG, 0, 0, &sz);
 
-	if(clBuildProgram(prog, 0, 0, 0, 0, 0) != 0) {
-		clGetProgramBuildInfo(prog, devinf.id, CL_PROGRAM_BUILD_LOG, sizeof errlog, errlog, 0);
-		fprintf(stderr, "failed to build program:\n%s\n", errlog);
+		char *errlog = (char*)alloca(sz + 1);
+		clGetProgramBuildInfo(prog, devinf.id, CL_PROGRAM_BUILD_LOG, sz, errlog, 0);
+		fprintf(stderr, "failed to build program: (%d)\n%s\n", err, errlog);
+
 		clReleaseProgram(prog);
 		prog = 0;
 		return false;
