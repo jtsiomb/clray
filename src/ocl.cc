@@ -140,7 +140,7 @@ CLProgram::CLProgram(const char *kname)
 	prog = 0;
 	kernel = 0;
 	this->kname = kname;
-	mbuf.resize(16);
+	args.resize(16);
 	built = false;
 }
 
@@ -154,9 +154,9 @@ CLProgram::~CLProgram()
 
 		clReleaseKernel(kernel);
 	}
-	for(size_t i=0; i<mbuf.size(); i++) {
-		if(mbuf[i]) {
-			destroy_mem_buffer(mbuf[i]);
+	for(size_t i=0; i<args.size(); i++) {
+		if(args[i].type == ARGTYPE_MEM_BUF) {
+			destroy_mem_buffer(args[i].v.mbuf);
 		}
 	}
 }
@@ -192,7 +192,31 @@ bool CLProgram::load(const char *fname)
 	return true;
 }
 
-bool CLProgram::set_arg(int arg, int rdwr, size_t sz, void *ptr)
+bool CLProgram::set_argi(int idx, int val)
+{
+	if((int)args.size() <= idx) {
+		args.resize(idx + 1);
+	}
+
+	CLArg *arg = &args[idx];
+	arg->type = ARGTYPE_INT;
+	arg->v.ival = val;
+	return true;
+}
+
+bool CLProgram::set_argf(int idx, float val)
+{
+	if((int)args.size() <= idx) {
+		args.resize(idx + 1);
+	}
+
+	CLArg *arg = &args[idx];
+	arg->type = ARGTYPE_FLOAT;
+	arg->v.fval = val;
+	return true;
+}
+
+bool CLProgram::set_arg_buffer(int idx, int rdwr, size_t sz, void *ptr)
 {
 	CLMemBuffer *buf;
 
@@ -200,19 +224,20 @@ bool CLProgram::set_arg(int arg, int rdwr, size_t sz, void *ptr)
 		return false;
 	}
 
-	if((int)mbuf.size() <= arg) {
-		mbuf.resize(arg + 1);
+	if((int)args.size() <= idx) {
+		args.resize(idx + 1);
 	}
-	mbuf[arg] = buf;
+	args[idx].type = ARGTYPE_MEM_BUF;
+	args[idx].v.mbuf = buf;
 	return true;
 }
 
 CLMemBuffer *CLProgram::get_arg_buffer(int arg)
 {
-	if(arg < 0 || arg >= (int)mbuf.size()) {
+	if(arg < 0 || arg >= (int)args.size() || args[arg].type != ARGTYPE_MEM_BUF) {
 		return 0;
 	}
-	return mbuf[arg];
+	return args[arg].v.mbuf;
 }
 
 bool CLProgram::build()
@@ -236,22 +261,53 @@ bool CLProgram::build()
 		return false;
 	}
 
-	for(size_t i=0; i<mbuf.size(); i++) {
-		if(!mbuf[i]) break;
-
+	for(size_t i=0; i<args.size(); i++) {
 		int err;
-		if((err = clSetKernelArg(kernel, i, sizeof mbuf[i]->mem, &mbuf[i]->mem)) != 0) {
-			fprintf(stderr, "failed to bind kernel argument: %d (%d)\n", (int)i, err);
-			clReleaseProgram(prog);
-			clReleaseKernel(kernel);
-			prog = 0;
-			kernel = 0;
-			return false;
+
+		if(args[i].type == ARGTYPE_NONE) {
+			break;
+		}
+
+		switch(args[i].type) {
+		case ARGTYPE_INT:
+			if((err = clSetKernelArg(kernel, i, sizeof(int), &args[i].v.ival)) != 0) {
+				fprintf(stderr, "failed to bind kernel argument: %d (%d)\n", (int)i, err);
+				goto fail;
+			}
+			break;
+
+		case ARGTYPE_FLOAT:
+			if((err = clSetKernelArg(kernel, i, sizeof(float), &args[i].v.fval)) != 0) {
+				fprintf(stderr, "failed to bind kernel argument: %d (%d)\n", (int)i, err);
+				goto fail;
+			}
+			break;
+
+		case ARGTYPE_MEM_BUF:
+			{
+				CLMemBuffer *mbuf = args[i].v.mbuf;
+
+				if((err = clSetKernelArg(kernel, i, sizeof mbuf->mem, &mbuf->mem)) != 0) {
+					fprintf(stderr, "failed to bind kernel argument: %d (%d)\n", (int)i, err);
+					goto fail;
+				}
+			}
+			break;
+
+		default:
+			break;
 		}
 	}
 
 	built = true;
 	return true;
+
+fail:
+	clReleaseProgram(prog);
+	clReleaseKernel(kernel);
+	prog = 0;
+	kernel = 0;
+	return false;
 }
 
 bool CLProgram::run() const

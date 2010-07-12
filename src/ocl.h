@@ -36,13 +36,32 @@ void unmap_mem_buffer(CLMemBuffer *mbuf);
 bool write_mem_buffer(CLMemBuffer *mbuf, size_t sz, void *src);
 bool read_mem_buffer(CLMemBuffer *mbuf, size_t sz, void *dest);
 
+enum {
+	ARGTYPE_NONE,
+
+	ARGTYPE_INT,
+	ARGTYPE_FLOAT,
+	ARGTYPE_FLOAT4,
+	ARGTYPE_MEM_BUF
+};
+
+struct CLArg {
+	int type;
+	union {
+		int ival;
+		float fval;
+		cl_float4 vval;
+		CLMemBuffer *mbuf;
+	} v;
+};
+
 
 class CLProgram {
 private:
 	std::string kname;
 	cl_program prog;
 	cl_kernel kernel;
-	std::vector<CLMemBuffer*> mbuf;
+	std::vector<CLArg> args;
 	bool built;
 
 public:
@@ -51,7 +70,9 @@ public:
 
 	bool load(const char *fname);
 
-	bool set_arg(int arg, int rdwr, size_t sz, void *buf);
+	bool set_argi(int arg, int val);
+	bool set_argf(int arg, float val);
+	bool set_arg_buffer(int arg, int rdwr, size_t sz, void *buf);
 	CLMemBuffer *get_arg_buffer(int arg);
 
 	bool build();
