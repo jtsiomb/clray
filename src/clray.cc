@@ -1,94 +1,126 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <math.h>
 #include <errno.h>
-#include <assert.h>
-#include "ocl.h"
+#ifndef __APPLE__
+#include <GL/glut.h>
+#else
+#include <GLUT/glut.h>
+#endif
+#include "rt.h"
 
-struct RendInfo {
-	int xsz, ysz;
-	int num_sph;
-	int max_iter;
-} __attribute__((packed));
-
-struct Sphere {
-	cl_float4 pos;
-	cl_float radius;
-
-	cl_float4 color;
-} __attribute__((packed));
-
-struct Ray {
-	cl_float4 origin, dir;
-} __attribute__((packed));
-
-
-Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg);
+void cleanup();
+void disp();
+void reshape(int x, int y);
+void keyb(unsigned char key, int x, int y);
+void mouse(int bn, int status, int x, int y);
+void motion(int x, int y);
 bool write_ppm(const char *fname, float *fb, int xsz, int ysz);
 
-int main()
+static float *fb;
+static int xsz, ysz;
+static bool need_update = true;
+
+int main(int argc, char **argv)
 {
-	const int xsz = 800;
-	const int ysz = 600;
+	glutInitWindowSize(800, 600);
+	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
+	glutCreateWindow("OpenCL Raytracer");
 
-	Sphere sphlist[] = {
-		{{0, 0, 10, 1}, 1.0, {1, 0, 0, 1}}
-	};
-	RendInfo rinf = {xsz, ysz, sizeof sphlist / sizeof *sphlist, 6};
-	Ray *prim_rays = new Ray[xsz * ysz];
-	float *fb = new float[xsz * ysz * 4];
+	xsz = glutGet(GLUT_WINDOW_WIDTH);
+	ysz = glutGet(GLUT_WINDOW_HEIGHT);
 
-	/* calculate primary rays */
-	for(int i=0; i<ysz; i++) {
-		for(int j=0; j<xsz; j++) {
-			prim_rays[i * xsz + j] = get_primary_ray(j, i, xsz, ysz, 45.0);
-		}
-	}
+	glutDisplayFunc(disp);
+	glutReshapeFunc(reshape);
+	glutKeyboardFunc(keyb);
+	glutMouseFunc(mouse);
+	glutMotionFunc(motion);
 
-	/* setup opencl */
-	CLProgram prog("render");
-	if(!prog.load("rt.cl")) {
+	fb = new float[xsz * ysz * 4];
+	if(!init_renderer(xsz, ysz, fb)) {
 		return 1;
 	}
+	atexit(cleanup);
 
-	prog.set_arg_buffer(0, ARG_WR, xsz * ysz * 4 * sizeof(float), fb);
-	prog.set_arg_buffer(1, ARG_RD, sizeof rinf, &rinf);
-	prog.set_arg_buffer(2, ARG_RD, sizeof sphlist, sphlist);
-	prog.set_arg_buffer(3, ARG_RD, xsz * ysz * sizeof *prim_rays, prim_rays);
+	/*glGenTextures(1, &tex);
+	glBindTexture(GL_TEXTURE_2D, tex);*/
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexImage2D(GL_TEXTURE_2D, 0, 4, xsz, ysz, 0, GL_RGBA, GL_FLOAT, 0);
 
-	if(!prog.run(1, xsz * ysz)) {
-		return 1;
-	}
-
-	CLMemBuffer *mbuf = prog.get_arg_buffer(0);
-	map_mem_buffer(mbuf, MAP_RD);
-	if(!write_ppm("out.ppm", fb, xsz, ysz)) {
-		return 1;
-	}
-	unmap_mem_buffer(mbuf);
-
-	delete [] fb;
-	delete [] prim_rays;
-
+	glutMainLoop();
 	return 0;
 }
 
-Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg)
+void cleanup()
 {
-	float vfov = M_PI * vfov_deg / 180.0;
-	float aspect = (float)w / (float)h;
+	delete [] fb;
+	destroy_renderer();
+}
 
-	float ysz = 2.0;
-	float xsz = aspect * ysz;
+void disp()
+{
+	if(need_update) {
+		render();
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, xsz, ysz, GL_RGBA, GL_FLOAT, fb);
+		need_update = false;
+	}
 
-	float px = ((float)x / (float)w) * xsz - xsz / 2.0;
-	float py = 1.0 - ((float)y / (float)h) * ysz;
-	float pz = 1.0 / tan(0.5 * vfov);
+	glEnable(GL_TEXTURE_2D);
 
-	pz *= 1000.0;
+	glBegin(GL_QUADS);
+	glTexCoord2f(0, 1); glVertex2f(-1, -1);
+	glTexCoord2f(1, 1); glVertex2f(1, -1);
+	glTexCoord2f(1, 0); glVertex2f(1, 1);
+	glTexCoord2f(0, 0); glVertex2f(-1, 1);
+	glEnd();
 
-	Ray ray = {{0, 0, 0, 1}, {px, py, pz, 1}};
-	return ray;
+	glDisable(GL_TEXTURE_2D);
+
+	glutSwapBuffers();
+}
+
+void reshape(int x, int y)
+{
+	glViewport(0, 0, x, y);
+
+	/* reallocate the framebuffer */
+	/*delete [] fb;
+	fb = new float[x * y * 4];
+	set_framebuffer(fb, x, y);*/
+}
+
+void keyb(unsigned char key, int x, int y)
+{
+	switch(key) {
+	case 27:
+		exit(0);
+
+	case 's':
+		if(write_ppm("shot.ppm", fb, xsz, ysz)) {
+			printf("captured screenshot shot.ppm\n");
+		}
+		break;
+
+	case 'r':
+		need_update = true;
+		glutPostRedisplay();
+		break;
+
+	default:
+		break;
+	}
+}
+
+void mouse(int bn, int state, int x, int y)
+{
+}
+
+void motion(int x, int y)
+{
 }
 
 bool write_ppm(const char *fname, float *fb, int xsz, int ysz)

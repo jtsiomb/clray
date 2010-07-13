@@ -1,6 +1,6 @@
 struct RendInfo {
 	int xsz, ysz;
-	int num_sph;
+	int num_sph, num_lights;
 	int max_iter;
 };
 
@@ -8,6 +8,10 @@ struct Sphere {
 	float4 pos;
 	float radius;
 	float4 color;
+};
+
+struct Light {
+	float4 pos, color;
 };
 
 struct Ray {
@@ -26,6 +30,7 @@ bool intersect(struct Ray ray, __global const struct Sphere *sph, struct SurfPoi
 __kernel void render(__global float4 *fb,
 		__global const struct RendInfo *rinf,
 		__global const struct Sphere *sphlist,
+		__global const struct Light *lights,
 		__global const struct Ray *primrays)
 {
 	int idx = get_global_id(0);
@@ -38,6 +43,8 @@ __kernel void render(__global float4 *fb,
 	} else {
 		fb[idx] = (float4)(0, 0, 0, 1);
 	}
+
+	fb[idx] = primrays[idx].dir * 0.5 + 0.5;
 }
 
 bool intersect(struct Ray ray,
