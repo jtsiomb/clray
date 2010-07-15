@@ -11,9 +11,8 @@ struct RendInfo {
 
 struct Sphere {
 	cl_float4 pos;
-	cl_float radius;
-
 	cl_float4 kd, ks;
+	cl_float radius;
 	cl_float spow;
 	cl_float kr, kt;
 } __attribute__((packed));
@@ -34,8 +33,8 @@ static CLProgram *prog;
 static int global_size;
 
 static Sphere sphlist[] = {
-	{{0, 0, 8, 1}, 1.0, {0.7, 0.2, 0.15, 1}, {1, 1, 1, 1}, 60, 0, 0},
-	{{-0.2, 0.4, 5, 1}, 0.25, {0.2, 0.9, 0.3, 1}, {1, 1, 1, 1}, 40, 0, 0}
+	{{0, 0, 8, 1}, {0.7, 0.2, 0.15, 1}, {1, 1, 1, 1}, 1.0, 60, 0, 0},
+	{{-0.2, 0.4, 5, 1}, {0.2, 0.9, 0.3, 1}, {1, 1, 1, 1}, 0.25, 40, 0, 0}
 };
 
 static Light lightlist[] = {
