@@ -7,7 +7,8 @@ struct RendInfo {
 struct Sphere {
 	float4 pos;
 	float radius;
-	float4 color;
+	float4 kd, ks;
+	float spow, kr, kt;
 };
 
 struct Light {
@@ -21,34 +22,44 @@ struct Ray {
 struct SurfPoint {
 	float t;
 	float3 pos, norm;
+	global const struct Sphere *obj;
 };
 
 #define EPSILON 1e-6
 
-bool intersect(struct Ray ray, __global const struct Sphere *sph, struct SurfPoint *sp);
+float4 shade(struct Ray ray, struct SurfPoint sp);
+bool intersect(struct Ray ray, global const struct Sphere *sph, struct SurfPoint *sp);
 
-__kernel void render(__global float4 *fb,
-		__global const struct RendInfo *rinf,
-		__global const struct Sphere *sphlist,
-		__global const struct Light *lights,
-		__global const struct Ray *primrays)
+
+kernel void render(global float4 *fb,
+		global const struct RendInfo *rinf,
+		global const struct Sphere *sphlist,
+		global const struct Light *lights,
+		global const struct Ray *primrays)
 {
 	int idx = get_global_id(0);
 
 	struct Ray ray = primrays[idx];
-	struct SurfPoint sp;
+	struct SurfPoint sp, sp0;
 
-	if(intersect(ray, sphlist, &sp)) {
-		fb[idx] = (float4)(1, 0, 0, 1);
-	} else {
-		fb[idx] = (float4)(0, 0, 0, 1);
+	sp0.t = FLT_MAX;
+
+	for(int i=0; i<rinf->num_sph; i++) {
+		if(intersect(ray, sphlist, &sp) && sp.t < sp0.t) {
+			sp0 = sp;
+		}
 	}
 
-	fb[idx] = primrays[idx].dir * 0.5 + 0.5;
+	fb[idx] = shade(ray, sp0);
+}
+
+float4 shade(struct Ray ray, struct SurfPoint sp)
+{
+	return sp.obj->kd;
 }
 
 bool intersect(struct Ray ray,
-		__global const struct Sphere *sph,
+		global const struct Sphere *sph,
 		struct SurfPoint *sp)
 {
 	float3 dir = ray.dir.xyz;

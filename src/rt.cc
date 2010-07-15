@@ -13,7 +13,9 @@ struct Sphere {
 	cl_float4 pos;
 	cl_float radius;
 
-	cl_float4 color;
+	cl_float4 kd, ks;
+	cl_float spow;
+	cl_float kr, kt;
 } __attribute__((packed));
 
 struct Ray {
@@ -31,21 +33,27 @@ static Ray *prim_rays;
 static CLProgram *prog;
 static int global_size;
 
+static Sphere sphlist[] = {
+	{{0, 0, 8, 1}, 1.0, {0.7, 0.2, 0.15, 1}, {1, 1, 1, 1}, 60, 0, 0},
+	{{-0.2, 0.4, 5, 1}, 0.25, {0.2, 0.9, 0.3, 1}, {1, 1, 1, 1}, 40, 0, 0}
+};
+
+static Light lightlist[] = {
+	{{-10, 10, -20, 1}, {1, 1, 1, 1}}
+};
+
+static RendInfo rinf;
+
+
 bool init_renderer(int xsz, int ysz, float *fb)
 {
-	Sphere sphlist[] = {
-		{{0, 0, 10, 1}, 1.0, {1, 0, 0, 1}}
-	};
-	Light lightlist[] = {
-		{{-10, 10, -20, 1}, {1, 1, 1, 1}}
-	};
-	RendInfo rinf = {
-		xsz, ysz,
-		sizeof sphlist / sizeof *sphlist,
-		sizeof lightlist / sizeof *lightlist,
-		6
-	};
-	
+	// render info
+	rinf.xsz = xsz;
+	rinf.ysz = ysz;
+	rinf.num_sph = sizeof sphlist / sizeof *sphlist;
+	rinf.num_lights = sizeof lightlist / sizeof *lightlist;
+	rinf.max_iter = 6;
+
 	/* calculate primary rays */
 	prim_rays = new Ray[xsz * ysz];
 
@@ -105,7 +113,9 @@ static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg)
 	float py = 1.0 - ((float)y / (float)h) * ysz;
 	float pz = 1.0 / tan(0.5 * vfov);
 
-	pz *= 1000.0;
+	px *= 100.0;
+	py *= 100.0;
+	pz *= 100.0;
 
 	Ray ray = {{0, 0, 0, 1}, {px, py, pz, 1}};
 	return ray;
