@@ -25,6 +25,10 @@ struct SurfPoint {
 	global const struct Sphere *obj;
 };
 
+struct Matrix4x4 {
+	float m[16];
+};
+
 #define EPSILON 1e-6
 
 float4 shade(struct Ray ray, struct SurfPoint sp,
@@ -37,7 +41,8 @@ kernel void render(global float4 *fb,
 		global const struct RendInfo *rinf,
 		global const struct Sphere *sphlist,
 		global const struct Light *lights,
-		global const struct Ray *primrays)
+		global const struct Ray *primrays,
+		global const struct Matrix4x4 xform)
 {
 	int idx = get_global_id(0);
 

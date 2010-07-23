@@ -25,6 +25,9 @@ struct Light {
 	cl_float4 pos, color;
 } __attribute__((packed));
 
+struct Matrix4x4 {
+	cl_float m[16];
+};
 
 static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg);
 
@@ -39,6 +42,10 @@ static Sphere sphlist[] = {
 
 static Light lightlist[] = {
 	{{-10, 10, -20, 1}, {1, 1, 1, 1}}
+};
+
+static Matrix4x4 xform = {
+	{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}
 };
 
 static RendInfo rinf;
@@ -74,6 +81,7 @@ bool init_renderer(int xsz, int ysz, float *fb)
 	prog->set_arg_buffer(2, ARG_RD, sizeof sphlist, sphlist);
 	prog->set_arg_buffer(3, ARG_RD, sizeof lightlist, lightlist);
 	prog->set_arg_buffer(4, ARG_RD, xsz * ysz * sizeof *prim_rays, prim_rays);
+	prog->set_arg_buffer(5, ARG_RD, sizeof xform, &xform);
 
 	global_size = xsz * ysz;
 	return true;
