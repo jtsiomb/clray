@@ -21,6 +21,9 @@ static float *fb;
 static int xsz, ysz;
 static bool need_update = true;
 
+static float cam_theta, cam_phi = 25.0;
+static float cam_dist = 10.0;
+
 int main(int argc, char **argv)
 {
 	glutInitWindowSize(800, 600);
@@ -63,7 +66,21 @@ void cleanup()
 
 void disp()
 {
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+
 	if(need_update) {
+		float mat[16];
+
+		glPushMatrix();
+		glRotatef(cam_theta, 0, 1, 0);
+		glRotatef(cam_phi, 1, 0, 0);
+		glTranslatef(0, 0, -cam_dist);
+
+		glGetFloatv(GL_MODELVIEW_MATRIX, mat);
+		set_xform(mat);
+		glPopMatrix();
+
 		render();
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, xsz, ysz, GL_RGBA, GL_FLOAT, fb);
 		need_update = false;
@@ -115,12 +132,47 @@ void keyb(unsigned char key, int x, int y)
 	}
 }
 
+static bool bnstate[32];
+static int prev_x, prev_y;
+
 void mouse(int bn, int state, int x, int y)
 {
+	if(state == GLUT_DOWN) {
+		prev_x = x;
+		prev_y = y;
+		bnstate[bn] = true;
+	} else {
+		bnstate[bn] = false;
+	}
 }
+
+#define ROT_SCALE	0.5
+#define PAN_SCALE	0.1
 
 void motion(int x, int y)
 {
+	int dx = x - prev_x;
+	int dy = y - prev_y;
+	prev_x = x;
+	prev_y = y;
+
+	if(bnstate[0]) {
+		cam_theta += dx * ROT_SCALE;
+		cam_phi += dy * ROT_SCALE;
+
+		if(cam_phi < -89) cam_phi = 89;
+		if(cam_phi > 89) cam_phi = 89;
+
+		need_update = true;
+		glutPostRedisplay();
+	}
+	if(bnstate[2]) {
+		cam_dist += dy * PAN_SCALE;
+		if(cam_dist < 0) cam_dist = 0;
+
+		need_update = true;
+		glutPostRedisplay();
+	}
 }
 
 bool write_ppm(const char *fname, float *fb, int xsz, int ysz)

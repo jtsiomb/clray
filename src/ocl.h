@@ -4,7 +4,7 @@
 #include <vector>
 #include <string>
 #ifndef __APPLE__
-#include <CL/opencl.h>
+#include <CL/cl.h>
 #else
 #include <OpenCL/opencl.h>
 #endif

@@ -4,7 +4,15 @@ bin = test
 
 CXX = g++
 CXXFLAGS = -pedantic -Wall -g
-LDFLAGS = -framework OpenGL -framework GLUT -framework OpenCL
+LDFLAGS = $(libgl) $(libcl)
+
+ifeq ($(shell uname -s), Darwin)
+	libgl = -framework OpenGL -framework GLUT
+	libcl = -framework OpenCL
+else
+	libgl = -lGL -lglut
+	libcl = -lOpenCL
+endif
 
 $(bin): $(obj)
 	$(CXX) -o $@ $(obj) $(LDFLAGS)

@@ -1,10 +1,14 @@
+#define OCL_CC_
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <errno.h>
 #include <alloca.h>
 #include <sys/stat.h>
 #include "ocl.h"
+#include "ocl_errstr.h"
 
 
 class InitCL {
@@ -31,6 +35,7 @@ static int get_dev_info(cl_device_id dev, struct device_info *di);
 static int devcmp(struct device_info *a, struct device_info *b);
 static const char *devtypestr(cl_device_type type);
 static void print_memsize(FILE *out, unsigned long memsz);
+static const char *clstrerror(int err);
 
 
 static InitCL initcl;
@@ -72,7 +77,7 @@ CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, void *buf)
 
 
 	if(!(mem = clCreateBuffer(ctx, rdwr | CL_MEM_USE_HOST_PTR, sz, buf, &err))) {
-		fprintf(stderr, "failed to create memory buffer (%d)\n", err);
+		fprintf(stderr, "failed to create memory buffer: %s\n", clstrerror(err));
 		return 0;
 	}
 
@@ -98,7 +103,7 @@ void *map_mem_buffer(CLMemBuffer *mbuf, int rdwr)
 	int err;
 	mbuf->ptr = clEnqueueMapBuffer(cmdq, mbuf->mem, 1, rdwr, 0, mbuf->size, 0, 0, 0, &err);
 	if(!mbuf->ptr) {
-		fprintf(stderr, "failed to map buffer (%d)\n", err);
+		fprintf(stderr, "failed to map buffer: %s\n", clstrerror(err));
 		return 0;
 	}
 	return mbuf->ptr;
@@ -116,7 +121,7 @@ bool write_mem_buffer(CLMemBuffer *mbuf, size_t sz, void *src)
 
 	int err;
 	if((err = clEnqueueWriteBuffer(cmdq, mbuf->mem, 1, 0, sz, src, 0, 0, 0)) != 0) {
-		fprintf(stderr, "failed to write buffer (%d)\n", err);
+		fprintf(stderr, "failed to write buffer: %s\n", clstrerror(err));
 		return false;
 	}
 	return true;
@@ -128,7 +133,7 @@ bool read_mem_buffer(CLMemBuffer *mbuf, size_t sz, void *dest)
 
 	int err;
 	if((err = clEnqueueReadBuffer(cmdq, mbuf->mem, 1, 0, sz, dest, 0, 0, 0)) != 0) {
-		fprintf(stderr, "failed to read buffer (%d)\n", err);
+		fprintf(stderr, "failed to read buffer: %s\n", clstrerror(err));
 		return false;
 	}
 	return true;
@@ -250,7 +255,7 @@ bool CLProgram::build()
 
 		char *errlog = (char*)alloca(sz + 1);
 		clGetProgramBuildInfo(prog, devinf.id, CL_PROGRAM_BUILD_LOG, sz, errlog, 0);
-		fprintf(stderr, "failed to build program: (%d)\n%s\n", err, errlog);
+		fprintf(stderr, "failed to build program: %s\n%s\n", clstrerror(err), errlog);
 
 		clReleaseProgram(prog);
 		prog = 0;
@@ -275,14 +280,14 @@ bool CLProgram::build()
 		switch(args[i].type) {
 		case ARGTYPE_INT:
 			if((err = clSetKernelArg(kernel, i, sizeof(int), &args[i].v.ival)) != 0) {
-				fprintf(stderr, "failed to bind kernel argument: %d (%d)\n", (int)i, err);
+				fprintf(stderr, "failed to bind kernel argument %d: %s\n", (int)i, clstrerror(err));
 				goto fail;
 			}
 			break;
 
 		case ARGTYPE_FLOAT:
 			if((err = clSetKernelArg(kernel, i, sizeof(float), &args[i].v.fval)) != 0) {
-				fprintf(stderr, "failed to bind kernel argument: %d (%d)\n", (int)i, err);
+				fprintf(stderr, "failed to bind kernel argument %d: %s\n", (int)i, clstrerror(err));
 				goto fail;
 			}
 			break;
@@ -292,7 +297,7 @@ bool CLProgram::build()
 				CLMemBuffer *mbuf = args[i].v.mbuf;
 
 				if((err = clSetKernelArg(kernel, i, sizeof mbuf->mem, &mbuf->mem)) != 0) {
-					fprintf(stderr, "failed to bind kernel argument: %d (%d)\n", (int)i, err);
+					fprintf(stderr, "failed to bind kernel argument %d: %s\n", (int)i, clstrerror(err));
 					goto fail;
 				}
 			}
@@ -338,7 +343,7 @@ bool CLProgram::run(int dim, ...) const
 
 	int err;
 	if((err = clEnqueueNDRangeKernel(cmdq, kernel, dim, 0, global_size, 0, 0, 0, 0)) != 0) {
-		fprintf(stderr, "error executing kernel (%d)\n", err);
+		fprintf(stderr, "error executing kernel: %s\n", clstrerror(err));
 		return false;
 	}
 	return true;
@@ -346,13 +351,36 @@ bool CLProgram::run(int dim, ...) const
 
 static int select_device(struct device_info *dev_inf, int (*devcmp)(struct device_info*, struct device_info*))
 {
-	unsigned int i, j, num_dev, sel;
+	unsigned int i, j, num_dev, num_plat, sel, ret;
 	cl_device_id dev[32];
+	cl_platform_id plat[32];
 
 	dev_inf->work_item_sizes = 0;
 
+	if((ret = clGetPlatformIDs(32, plat, &num_plat)) != 0) {
+		fprintf(stderr, "clGetPlatformIDs failed: %s\n", clstrerror(ret));
+		return -1;
+	}
+	if(!num_plat) {
+		fprintf(stderr, "OpenCL not available!\n");
+		return -1;
+	}
 
-	clGetDeviceIDs(0, CL_DEVICE_TYPE_ALL, 32, dev, &num_dev);
+	for(i=0; i<num_plat; i++) {
+		char buf[512];
+
+		clGetPlatformInfo(plat[i], CL_PLATFORM_NAME, sizeof buf, buf, 0);
+		printf("[%d]: %s", i, buf);
+		clGetPlatformInfo(plat[i], CL_PLATFORM_VENDOR, sizeof buf, buf, 0);
+		printf(", %s", buf);
+		clGetPlatformInfo(plat[i], CL_PLATFORM_VERSION, sizeof buf, buf, 0);
+		printf(" (%s)\n", buf);
+	}
+
+	if((ret = clGetDeviceIDs(plat[0], CL_DEVICE_TYPE_ALL, 32, dev, &num_dev)) != 0) {
+		fprintf(stderr, "clGetDeviceIDs failed: %s\n", clstrerror(ret));
+		return -1;
+	}
 	printf("found %d cl devices.\n", num_dev);
 
 	for(i=0; i<num_dev; i++) {
@@ -456,4 +484,15 @@ static void print_memsize(FILE *out, unsigned long bytes)
 
 		memsz /= 1024;
 	}
+}
+
+static const char *clstrerror(int err)
+{
+	if(err > 0) {
+		return "<invalid error code>";
+	}
+	if(err <= -(int)(sizeof ocl_errstr / sizeof *ocl_errstr)) {
+		return "<unknown error>";
+	}
+	return ocl_errstr[-err];
 }

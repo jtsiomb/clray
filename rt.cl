@@ -21,12 +21,8 @@ struct Ray {
 
 struct SurfPoint {
 	float t;
-	float3 pos, norm;
+	float4 pos, norm;
 	global const struct Sphere *obj;
-};
-
-struct Matrix4x4 {
-	float m[16];
 };
 
 #define EPSILON 1e-6
@@ -34,7 +30,9 @@ struct Matrix4x4 {
 float4 shade(struct Ray ray, struct SurfPoint sp,
 		global const struct Light *lights, int num_lights);
 bool intersect(struct Ray ray, global const struct Sphere *sph, struct SurfPoint *sp);
-float3 reflect(float3 v, float3 n);
+float4 reflect(float4 v, float4 n);
+float4 transform(float4 v, global const float *xform);
+struct Ray transform_ray(global const struct Ray *ray, global const float *xform);
 
 
 kernel void render(global float4 *fb,
@@ -42,13 +40,13 @@ kernel void render(global float4 *fb,
 		global const struct Sphere *sphlist,
 		global const struct Light *lights,
 		global const struct Ray *primrays,
-		global const struct Matrix4x4 xform)
+		global const float *xform)
 {
 	int idx = get_global_id(0);
 
-	struct Ray ray = primrays[idx];
-	struct SurfPoint sp, sp0;
+	struct Ray ray = transform_ray(primrays + idx, xform);
 
+	struct SurfPoint sp, sp0;
 	sp0.t = FLT_MAX;
 	sp0.obj = 0;
 
@@ -68,31 +66,31 @@ kernel void render(global float4 *fb,
 float4 shade(struct Ray ray, struct SurfPoint sp,
 		global const struct Light *lights, int num_lights)
 {
-	float3 dcol = (float3)(0, 0, 0);
-	float3 scol = (float3)(0, 0, 0);
+	float4 dcol = (float4)(0, 0, 0, 0);
+	float4 scol = (float4)(0, 0, 0, 0);
 
 	for(int i=0; i<num_lights; i++) {
-		float3 ldir = normalize(lights[i].pos.xyz - sp.pos);
-		float3 vdir = -normalize(ray.dir.xyz);
-		float3 vref = reflect(vdir, sp.norm);
+		float4 ldir = normalize(lights[i].pos - sp.pos);
+		float4 vdir = -normalize(ray.dir);
+		float4 vref = reflect(vdir, sp.norm);
 
 		float diff = fmax(dot(ldir, sp.norm), 0.0f);
 		float spec = powr(fmax(dot(ldir, vref), 0.0f), sp.obj->spow);
 
-		dcol += sp.obj->kd.xyz * diff * lights[i].color.xyz;
-		scol += sp.obj->ks.xyz * spec * lights[i].color.xyz;
+		dcol += sp.obj->kd * diff * lights[i].color;
+		scol += sp.obj->ks * spec * lights[i].color;
 	}
 
-	return (float4)(dcol + scol, 1.0f);
+	return dcol + scol;
 }
 
 bool intersect(struct Ray ray,
 		global const struct Sphere *sph,
 		struct SurfPoint *sp)
 {
-	float3 dir = ray.dir.xyz;
-	float3 orig = ray.origin.xyz;
-	float3 spos = sph->pos.xyz;
+	float4 dir = ray.dir;
+	float4 orig = ray.origin;
+	float4 spos = sph->pos;
 
 	float a = dot(dir, dir);
 	float b = 2.0 * dir.x * (orig.x - spos.x) +
@@ -123,7 +121,33 @@ bool intersect(struct Ray ray,
 	return true;
 }
 
-float3 reflect(float3 v, float3 n)
+float4 reflect(float4 v, float4 n)
 {
 	return 2.0f * dot(v, n) * n - v;
+}
+
+float4 transform(float4 v, global const float *xform)
+{
+	float4 res;
+	res.x = v.x * xform[0] + v.y * xform[4] + v.z * xform[8] + xform[12];
+	res.y = v.x * xform[1] + v.y * xform[5] + v.z * xform[9] + xform[13];
+	res.z = v.x * xform[2] + v.y * xform[6] + v.z * xform[10] + xform[14];
+	res.w = 1.0;
+	return res;
+}
+
+struct Ray transform_ray(global const struct Ray *ray, global const float *xform)
+{
+	struct Ray res;
+	float rot[16];
+
+	for(int i=0; i<16; i++) {
+		rot[i] = xform[i];
+	}
+	rot[3] = rot[7] = rot[11] = rot[12] = rot[13] = rot[14] = 0.0f;
+	rot[15] = 1.0f;
+
+	res.origin = transform(ray->origin, xform);
+	res.dir = transform(ray->dir, xform);
+	return res;
 }

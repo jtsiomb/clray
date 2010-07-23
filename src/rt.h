@@ -4,5 +4,6 @@
 bool init_renderer(int xsz, int ysz, float *fb);
 void destroy_renderer();
 bool render();
+void set_xform(float *matrix);
 
 #endif	/* RT_H_ */

@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
 #include <assert.h>
 #include "ocl.h"
@@ -10,24 +11,20 @@ struct RendInfo {
 } __attribute__((packed));
 
 struct Sphere {
-	cl_float4 pos;
-	cl_float4 kd, ks;
-	cl_float radius;
-	cl_float spow;
-	cl_float kr, kt;
+	float pos[4];
+	float kd[4], ks[4];
+	float radius;
+	float spow;
+	float kr, kt;
 } __attribute__((packed));
 
 struct Ray {
-	cl_float4 origin, dir;
+	float origin[4], dir[4];
 } __attribute__((packed));
 
 struct Light {
-	cl_float4 pos, color;
+	float pos[4], color[4];
 } __attribute__((packed));
-
-struct Matrix4x4 {
-	cl_float m[16];
-};
 
 static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg);
 
@@ -36,16 +33,16 @@ static CLProgram *prog;
 static int global_size;
 
 static Sphere sphlist[] = {
-	{{0, 0, 8, 1}, {0.7, 0.2, 0.15, 1}, {1, 1, 1, 1}, 1.0, 60, 0, 0},
-	{{-0.2, 0.4, 5, 1}, {0.2, 0.9, 0.3, 1}, {1, 1, 1, 1}, 0.25, 40, 0, 0}
+	{{0, 0, 0, 1}, {0.7, 0.2, 0.15, 1}, {1, 1, 1, 1}, 1.0, 60, 0, 0},
+	{{-0.2, 0.4, -3, 1}, {0.2, 0.9, 0.3, 1}, {1, 1, 1, 1}, 0.25, 40, 0, 0}
 };
 
 static Light lightlist[] = {
 	{{-10, 10, -20, 1}, {1, 1, 1, 1}}
 };
 
-static Matrix4x4 xform = {
-	{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}
+static float xform[16] = {
+	1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1
 };
 
 static RendInfo rinf;
@@ -72,7 +69,7 @@ bool init_renderer(int xsz, int ysz, float *fb)
 	/* setup opencl */
 	prog = new CLProgram("render");
 	if(!prog->load("rt.cl")) {
-		return 1;
+		return false;
 	}
 
 	/* setup argument buffers */
@@ -106,6 +103,16 @@ bool render()
 	}*/
 	unmap_mem_buffer(mbuf);
 	return true;
+}
+
+void set_xform(float *matrix)
+{
+	CLMemBuffer *mbuf = prog->get_arg_buffer(5);
+	assert(mbuf);
+
+	assert(map_mem_buffer(mbuf, MAP_WR) == xform);
+	memcpy(xform, matrix, sizeof xform);
+	unmap_mem_buffer(mbuf);
 }
 
 static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg)

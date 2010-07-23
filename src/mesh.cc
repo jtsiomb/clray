@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
 #include <string>
 #include <vector>
 #include <map>
@@ -9,7 +10,7 @@
 
 using namespace std;
 
-#define COMMANDS 	\
+#define COMMANDS	\
 	CMD(V),			\
 	CMD(VN),		\
 	CMD(VT),		\
@@ -136,7 +137,7 @@ bool Scene::load(FILE *fp)
 	char cur_name[16];
 
 	obj_file obj;
-	
+
 	sprintf(cur_name, "default%02d.obj", seq++);
 	obj.cur_obj = cur_name;
 
@@ -144,7 +145,7 @@ bool Scene::load(FILE *fp)
 	for(;;) {
 		Vector3 vec;
 		obj_face face;
-		
+
 		char line[BUF_SZ];
 		fgets(line, sizeof line, fp);
 		if(feof(fp)) {
@@ -246,7 +247,7 @@ bool Scene::load(FILE *fp)
 					mat.kt = 1.0 - vmtl[i].alpha;
 					mat.kr = 0.0;	// TODO
 					mat.spow = vmtl[i].shininess;
-					
+
 					matnames[vmtl[i].name] = i;
 				}
 			}
@@ -356,7 +357,7 @@ static Mesh *cons_mesh(obj_file *obj)
 	if(added_tc) {
 		obj->vt.pop_back();
 	}
-	
+
 	return mesh;
 }
 
@@ -445,7 +446,7 @@ static bool read_materials(FILE *fp, vector<obj_mat> *vmtl)
 static int get_cmd(char *str)
 {
 	char *s = str;
-	while((*s = toupper(*s))) s++; 
+	while((*s = toupper(*s))) s++;
 
 	for(int i=0; cmd_names[i]; i++) {
 		if(strcmp(str, cmd_names[i]) == 0) {
