@@ -4,19 +4,19 @@
 #include <vector>
 
 struct Vertex {
-	float pos[3];
-	float normal[3];
+	float pos[4];
+	float normal[4];
 	float tex[2];
 };
 
 struct Face {
 	Vertex v[3];
-	float normal[3];
+	float normal[4];
 	int matid;
 };
 
 struct Material {
-	float kd[3], ks[3];
+	float kd[4], ks[4];
 	float kr, kt;
 	float spow;
 };

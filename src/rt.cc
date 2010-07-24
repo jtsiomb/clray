@@ -3,19 +3,12 @@
 #include <math.h>
 #include <assert.h>
 #include "ocl.h"
+#include "mesh.h"
 
 struct RendInfo {
 	int xsz, ysz;
-	int num_sph, num_lights;
+	int num_faces, num_lights;
 	int max_iter;
-} __attribute__((packed));
-
-struct Sphere {
-	float pos[4];
-	float kd[4], ks[4];
-	float radius;
-	float spow;
-	float kr, kt;
 } __attribute__((packed));
 
 struct Ray {
@@ -32,9 +25,28 @@ static Ray *prim_rays;
 static CLProgram *prog;
 static int global_size;
 
-static Sphere sphlist[] = {
-	{{0, 0, 0, 1}, {0.7, 0.2, 0.15, 1}, {1, 1, 1, 1}, 1.0, 60, 0, 0},
-	{{-0.2, 0.4, -3, 1}, {0.2, 0.9, 0.3, 1}, {1, 1, 1, 1}, 0.25, 40, 0, 0}
+static Face faces[] = {
+	{/* face0 */
+		{
+			{{-1, 0, 0, 1}, {0, 0, -1, 1}, {0, 0}},
+			{{0, 1, 0, 1}, {0, 0, -1, 1}, {0, 0}},
+			{{1, 0, 0, 1}, {0, 0, -1, 1}, {0, 0}}
+		},
+		{0, 0, -1, 1}, 0
+	},
+	{/* face1 */
+		{
+			{{-5, 0, -3, 1}, {0, 0, -1, 1}, {0, 0}},
+			{{0, 0, 3, 1}, {0, 0, -1, 1}, {0, 0}},
+			{{5, 0, -3, 1}, {0, 0, -1, 1}, {0, 0}}
+		},
+		{0, 0, -1, 1}, 1
+	}
+};
+
+static Material matlib[] = {
+	{{1, 0, 0, 1}, {1, 1, 1, 1}, 0, 0, 60.0},
+	{{0.2, 0.8, 0.3, 1}, {0, 0, 0, 0}, 0, 0, 0}
 };
 
 static Light lightlist[] = {
@@ -53,7 +65,7 @@ bool init_renderer(int xsz, int ysz, float *fb)
 	// render info
 	rinf.xsz = xsz;
 	rinf.ysz = ysz;
-	rinf.num_sph = sizeof sphlist / sizeof *sphlist;
+	rinf.num_faces = sizeof faces / sizeof *faces;
 	rinf.num_lights = sizeof lightlist / sizeof *lightlist;
 	rinf.max_iter = 6;
 
@@ -75,10 +87,11 @@ bool init_renderer(int xsz, int ysz, float *fb)
 	/* setup argument buffers */
 	prog->set_arg_buffer(0, ARG_WR, xsz * ysz * 4 * sizeof(float), fb);
 	prog->set_arg_buffer(1, ARG_RD, sizeof rinf, &rinf);
-	prog->set_arg_buffer(2, ARG_RD, sizeof sphlist, sphlist);
-	prog->set_arg_buffer(3, ARG_RD, sizeof lightlist, lightlist);
-	prog->set_arg_buffer(4, ARG_RD, xsz * ysz * sizeof *prim_rays, prim_rays);
-	prog->set_arg_buffer(5, ARG_RD, sizeof xform, &xform);
+	prog->set_arg_buffer(2, ARG_RD, sizeof faces, faces);
+	prog->set_arg_buffer(3, ARG_RD, sizeof matlib, matlib);
+	prog->set_arg_buffer(4, ARG_RD, sizeof lightlist, lightlist);
+	prog->set_arg_buffer(5, ARG_RD, xsz * ysz * sizeof *prim_rays, prim_rays);
+	prog->set_arg_buffer(6, ARG_RD, sizeof xform, &xform);
 
 	global_size = xsz * ysz;
 	return true;
@@ -98,16 +111,13 @@ bool render()
 
 	CLMemBuffer *mbuf = prog->get_arg_buffer(0);
 	map_mem_buffer(mbuf, MAP_RD);
-	/*if(!write_ppm("out.ppm", fb, xsz, ysz)) {
-		return 1;
-	}*/
 	unmap_mem_buffer(mbuf);
 	return true;
 }
 
 void set_xform(float *matrix)
 {
-	CLMemBuffer *mbuf = prog->get_arg_buffer(5);
+	CLMemBuffer *mbuf = prog->get_arg_buffer(6);
 	assert(mbuf);
 
 	assert(map_mem_buffer(mbuf, MAP_WR) == xform);
