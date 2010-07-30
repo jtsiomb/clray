@@ -1,0 +1,20 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 10.00
+# Visual Studio 2008
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "clray", "clray.vcproj", "{12CC234E-967C-4460-BB6F-A915516EE882}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{12CC234E-967C-4460-BB6F-A915516EE882}.Debug|Win32.ActiveCfg = Debug|Win32
+		{12CC234E-967C-4460-BB6F-A915516EE882}.Debug|Win32.Build.0 = Debug|Win32
+		{12CC234E-967C-4460-BB6F-A915516EE882}.Release|Win32.ActiveCfg = Release|Win32
+		{12CC234E-967C-4460-BB6F-A915516EE882}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
