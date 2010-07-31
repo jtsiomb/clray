@@ -5,19 +5,33 @@
 #include "ocl.h"
 #include "mesh.h"
 
+#ifdef __GNUC__
+#define PACKED	__attribute__((packed))
+#else
+#define PACKED
+#endif
+
+#ifdef _MSC_VER
+#pragma push(pack, 1)
+#endif
+
 struct RendInfo {
 	int xsz, ysz;
 	int num_faces, num_lights;
 	int max_iter;
-} __attribute__((packed));
+} PACKED;
 
 struct Ray {
 	float origin[4], dir[4];
-} __attribute__((packed));
+} PACKED;
 
 struct Light {
 	float pos[4], color[4];
-} __attribute__((packed));
+} PACKED;
+
+#ifdef _MSC_VER
+#pragma pop(pack)
+#endif
 
 static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg);
 

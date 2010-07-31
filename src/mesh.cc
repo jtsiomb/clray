@@ -8,6 +8,10 @@
 #include <map>
 #include "mesh.h"
 
+#ifndef PATH_MAX
+#define PATH_MAX	512
+#endif
+
 using namespace std;
 
 #define COMMANDS	\

@@ -5,7 +5,11 @@
 #include <string.h>
 #include <stdarg.h>
 #include <errno.h>
+#ifndef _MSC_VER
 #include <alloca.h>
+#else
+#include <malloc.h>
+#endif
 #include <sys/stat.h>
 #include "ocl.h"
 #include "ocl_errstr.h"
