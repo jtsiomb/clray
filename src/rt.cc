@@ -2,36 +2,43 @@
 #include <string.h>
 #include <math.h>
 #include <assert.h>
+
+#ifndef __APPLE__
+#include <GL/gl.h>
+#include <GL/glu.h>
+#else
+#include <OpenGL/gl.h>
+#include <OpenGL/glu.h>
+#endif
+
 #include "ocl.h"
 #include "mesh.h"
 
-#ifdef __GNUC__
-#define PACKED	__attribute__((packed))
-#else
-#define PACKED
-#endif
-
-#ifdef _MSC_VER
-#pragma push(pack, 1)
-#endif
+// kernel arguments
+enum {
+	KARG_FRAMEBUFFER,
+	KARG_RENDER_INFO,
+	KARG_FACES,
+	KARG_MATLIB,
+	KARG_LIGHTS,
+	KARG_PRIM_RAYS,
+	KARG_XFORM,
+	KARG_INVTRANS_XFORM
+};
 
 struct RendInfo {
 	int xsz, ysz;
 	int num_faces, num_lights;
 	int max_iter;
-} PACKED;
+};
 
 struct Ray {
 	float origin[4], dir[4];
-} PACKED;
+};
 
 struct Light {
 	float pos[4], color[4];
-} PACKED;
-
-#ifdef _MSC_VER
-#pragma pop(pack)
-#endif
+};
 
 static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg);
 
@@ -42,39 +49,36 @@ static int global_size;
 static Face faces[] = {
 	{/* face0 */
 		{
-			{{-1, 0, 0, 1}, {0, 0, -1, 1}, {0, 0}},
-			{{0, 1, 0, 1}, {0, 0, -1, 1}, {0, 0}},
-			{{1, 0, 0, 1}, {0, 0, -1, 1}, {0, 0}}
+			{{-1, 0, 0, 0}, {0, 0, -1, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+			{{0, 1, 0, 0}, {0, 0, -1, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+			{{1, 0, 0, 0}, {0, 0, -1, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}
 		},
-		{0, 0, -1, 1}, 0
+		{0, 0, -1, 0}, 0, {0, 0, 0}
 	},
 	{/* face1 */
 		{
-			{{-5, 0, -3, 1}, {0, 0, -1, 1}, {0, 0}},
-			{{0, 0, 3, 1}, {0, 0, -1, 1}, {0, 0}},
-			{{5, 0, -3, 1}, {0, 0, -1, 1}, {0, 0}}
+			{{-5, 0, -3, 0}, {0, 1, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+			{{0, 0, 3, 0}, {0, 1, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+			{{5, 0, -3, 0}, {0, 1, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}
 		},
-		{0, 0, -1, 1}, 1
+		{0, 1, 0, 0}, 1, {0, 0, 0}
 	}
 };
 
 static Material matlib[] = {
-	{{1, 0, 0, 1}, {1, 1, 1, 1}, 0, 0, 60.0},
-	{{0.2, 0.8, 0.3, 1}, {0, 0, 0, 0}, 0, 0, 0}
+	{{1, 0, 0, 1}, {1, 1, 1, 1}, 0, 0, 60.0, 0},
+	{{0.2, 0.8, 0.3, 1}, {0, 0, 0, 0}, 0, 0, 0, 0}
 };
 
 static Light lightlist[] = {
-	{{-10, 10, -20, 1}, {1, 1, 1, 1}}
+	{{-10, 10, -20, 0}, {1, 1, 1, 1}}
 };
 
-static float xform[16] = {
-	1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1
-};
 
 static RendInfo rinf;
 
 
-bool init_renderer(int xsz, int ysz, float *fb)
+bool init_renderer(int xsz, int ysz)
 {
 	// render info
 	rinf.xsz = xsz;
@@ -99,13 +103,16 @@ bool init_renderer(int xsz, int ysz, float *fb)
 	}
 
 	/* setup argument buffers */
-	prog->set_arg_buffer(0, ARG_WR, xsz * ysz * 4 * sizeof(float), fb);
-	prog->set_arg_buffer(1, ARG_RD, sizeof rinf, &rinf);
-	prog->set_arg_buffer(2, ARG_RD, sizeof faces, faces);
-	prog->set_arg_buffer(3, ARG_RD, sizeof matlib, matlib);
-	prog->set_arg_buffer(4, ARG_RD, sizeof lightlist, lightlist);
-	prog->set_arg_buffer(5, ARG_RD, xsz * ysz * sizeof *prim_rays, prim_rays);
-	prog->set_arg_buffer(6, ARG_RD, sizeof xform, &xform);
+	prog->set_arg_buffer(KARG_FRAMEBUFFER, ARG_WR, xsz * ysz * 4 * sizeof(float));
+	prog->set_arg_buffer(KARG_RENDER_INFO, ARG_RD, sizeof rinf, &rinf);
+	prog->set_arg_buffer(KARG_FACES, ARG_RD, sizeof faces, faces);
+	prog->set_arg_buffer(KARG_MATLIB, ARG_RD, sizeof matlib, matlib);
+	prog->set_arg_buffer(KARG_LIGHTS, ARG_RD, sizeof lightlist, lightlist);
+	prog->set_arg_buffer(KARG_PRIM_RAYS, ARG_RD, xsz * ysz * sizeof *prim_rays, prim_rays);
+	prog->set_arg_buffer(KARG_XFORM, ARG_RD, 16 * sizeof(float));
+	prog->set_arg_buffer(KARG_INVTRANS_XFORM, ARG_RD, 16 * sizeof(float));
+
+	delete [] prim_rays;
 
 	global_size = xsz * ysz;
 	return true;
@@ -113,7 +120,6 @@ bool init_renderer(int xsz, int ysz, float *fb)
 
 void destroy_renderer()
 {
-	delete [] prim_rays;
 	delete prog;
 }
 
@@ -124,19 +130,63 @@ bool render()
 	}
 
 	CLMemBuffer *mbuf = prog->get_arg_buffer(0);
-	map_mem_buffer(mbuf, MAP_RD);
+	void *fb = map_mem_buffer(mbuf, MAP_RD);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rinf.xsz, rinf.ysz, GL_RGBA, GL_FLOAT, fb);
 	unmap_mem_buffer(mbuf);
 	return true;
 }
 
-void set_xform(float *matrix)
+void dbg_render_gl()
 {
-	CLMemBuffer *mbuf = prog->get_arg_buffer(6);
-	assert(mbuf);
+	glPushAttrib(GL_ENABLE_BIT | GL_TRANSFORM_BIT);
 
-	assert(map_mem_buffer(mbuf, MAP_WR) == xform);
-	memcpy(xform, matrix, sizeof xform);
-	unmap_mem_buffer(mbuf);
+	glDisable(GL_TEXTURE_2D);
+	glEnable(GL_DEPTH_TEST);
+
+	glMatrixMode(GL_PROJECTION);
+	glPushMatrix();
+	glLoadIdentity();
+	gluPerspective(45.0, (float)rinf.xsz / (float)rinf.ysz, 0.5, 1000.0);
+
+	glBegin(GL_TRIANGLES);
+	for(int i=0; i<rinf.num_faces; i++) {
+		Material *mat = matlib + faces[i].matid;
+		glColor3f(mat->kd[0], mat->kd[1], mat->kd[2]);
+
+		for(int j=0; j<3; j++) {
+			float *pos = faces[i].v[j].pos;
+			glVertex3f(pos[0], pos[1], pos[2]);
+		}
+	}
+	glEnd();
+
+	glPopMatrix();
+	glPopAttrib();
+}
+
+void set_xform(float *matrix, float *invtrans)
+{
+	CLMemBuffer *mbuf_xform = prog->get_arg_buffer(KARG_XFORM);
+	CLMemBuffer *mbuf_invtrans = prog->get_arg_buffer(KARG_INVTRANS_XFORM);
+	assert(mbuf_xform && mbuf_invtrans);
+
+	float *mem = (float*)map_mem_buffer(mbuf_xform, MAP_WR);
+	memcpy(mem, matrix, 16 * sizeof *mem);
+	printf("-- xform:\n");
+	for(int i=0; i<16; i++) {
+		printf("%2.3f\t", mem[i]);
+		if(i % 4 == 3) putchar('\n');
+	}
+	unmap_mem_buffer(mbuf_xform);
+
+	mem = (float*)map_mem_buffer(mbuf_invtrans, MAP_WR);
+	memcpy(mem, invtrans, 16 * sizeof *mem);
+	printf("-- inverse-transpose:\n");
+	for(int i=0; i<16; i++) {
+		printf("%2.3f\t", mem[i]);
+		if(i % 4 == 3) putchar('\n');
+	}
+	unmap_mem_buffer(mbuf_invtrans);
 }
 
 static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg)
@@ -155,6 +205,6 @@ static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg)
 	py *= 100.0;
 	pz *= 100.0;
 
-	Ray ray = {{0, 0, 0, 1}, {px, py, pz, 1}};
+	Ray ray = {{0, 0, 0, 1}, {px, py, -pz, 1}};
 	return ray;
 }

@@ -78,9 +78,14 @@ CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, void *buf)
 {
 	int err;
 	cl_mem mem;
+	cl_mem_flags flags = rdwr | CL_MEM_ALLOC_HOST_PTR;
+
+	if(buf) {
+		flags |= CL_MEM_COPY_HOST_PTR;
+	}
 
 
-	if(!(mem = clCreateBuffer(ctx, rdwr | CL_MEM_USE_HOST_PTR, sz, buf, &err))) {
+	if(!(mem = clCreateBuffer(ctx, flags, sz, buf, &err))) {
 		fprintf(stderr, "failed to create memory buffer: %s\n", clstrerror(err));
 		return 0;
 	}
@@ -88,13 +93,13 @@ CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, void *buf)
 	CLMemBuffer *mbuf = new CLMemBuffer;
 	mbuf->mem = mem;
 	mbuf->size = sz;
+	mbuf->ptr = 0;
 	return mbuf;
 }
 
 void destroy_mem_buffer(CLMemBuffer *mbuf)
 {
 	if(mbuf) {
-
 		clReleaseMemObject(mbuf->mem);
 		delete mbuf;
 	}
@@ -103,6 +108,12 @@ void destroy_mem_buffer(CLMemBuffer *mbuf)
 void *map_mem_buffer(CLMemBuffer *mbuf, int rdwr)
 {
 	if(!mbuf) return 0;
+
+#ifndef NDEBUG
+	if(mbuf->ptr) {
+		fprintf(stderr, "WARNING: map_mem_buffer called on already mapped buffer\n");
+	}
+#endif
 
 	int err;
 	mbuf->ptr = clEnqueueMapBuffer(cmdq, mbuf->mem, 1, rdwr, 0, mbuf->size, 0, 0, 0, &err);
@@ -117,6 +128,7 @@ void unmap_mem_buffer(CLMemBuffer *mbuf)
 {
 	if(!mbuf || !mbuf->ptr) return;
 	clEnqueueUnmapMemObject(cmdq, mbuf->mem, mbuf->ptr, 0, 0, 0);
+	mbuf->ptr = 0;
 }
 
 bool write_mem_buffer(CLMemBuffer *mbuf, size_t sz, void *src)

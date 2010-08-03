@@ -8,6 +8,7 @@
 #include <GLUT/glut.h>
 #endif
 #include "rt.h"
+#include "matrix.h"
 
 void cleanup();
 void disp();
@@ -17,12 +18,13 @@ void mouse(int bn, int status, int x, int y);
 void motion(int x, int y);
 bool write_ppm(const char *fname, float *fb, int xsz, int ysz);
 
-static float *fb;
 static int xsz, ysz;
 static bool need_update = true;
 
 static float cam_theta, cam_phi = 25.0;
 static float cam_dist = 10.0;
+
+static bool dbg_glrender;
 
 int main(int argc, char **argv)
 {
@@ -40,8 +42,7 @@ int main(int argc, char **argv)
 	glutMouseFunc(mouse);
 	glutMotionFunc(motion);
 
-	fb = new float[xsz * ysz * 4];
-	if(!init_renderer(xsz, ysz, fb)) {
+	if(!init_renderer(xsz, ysz)) {
 		return 1;
 	}
 	atexit(cleanup);
@@ -60,9 +61,10 @@ int main(int argc, char **argv)
 
 void cleanup()
 {
-	delete [] fb;
 	destroy_renderer();
 }
+
+static Matrix4x4 mat, inv_mat, inv_trans;
 
 void disp()
 {
@@ -70,32 +72,49 @@ void disp()
 	glLoadIdentity();
 
 	if(need_update) {
-		float mat[16];
-
 		glPushMatrix();
-		glRotatef(cam_theta, 0, 1, 0);
-		glRotatef(cam_phi, 1, 0, 0);
-		glTranslatef(0, 0, -cam_dist);
+		glRotatef(-cam_theta, 0, 1, 0);
+		glRotatef(-cam_phi, 1, 0, 0);
+		glTranslatef(0, 0, cam_dist);
 
-		glGetFloatv(GL_MODELVIEW_MATRIX, mat);
-		set_xform(mat);
+		glGetFloatv(GL_MODELVIEW_MATRIX, mat.m);
+
+		inv_mat = mat;
+		inv_mat.invert();
+
+		/*inv_trans = inv_mat;
+		inv_trans.transpose();*/
+		inv_trans = mat;
+		inv_trans.m[3] = inv_trans.m[7] = inv_trans.m[11] = 0.0;
+		inv_trans.m[12] = inv_trans.m[13] = inv_trans.m[14] = 0.0;
+		inv_trans.m[15] = 1.0;
+
+		set_xform(mat.m, inv_trans.m);
 		glPopMatrix();
 
-		render();
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, xsz, ysz, GL_RGBA, GL_FLOAT, fb);
+		if(!render()) {
+			exit(1);
+		}
 		need_update = false;
 	}
 
-	glEnable(GL_TEXTURE_2D);
+	if(dbg_glrender) {
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glLoadMatrixf(inv_mat.m);
+		dbg_render_gl();
+	} else {
+		glEnable(GL_TEXTURE_2D);
 
-	glBegin(GL_QUADS);
-	glTexCoord2f(0, 1); glVertex2f(-1, -1);
-	glTexCoord2f(1, 1); glVertex2f(1, -1);
-	glTexCoord2f(1, 0); glVertex2f(1, 1);
-	glTexCoord2f(0, 0); glVertex2f(-1, 1);
-	glEnd();
+		glBegin(GL_QUADS);
+		glColor3f(1, 1, 1);
+		glTexCoord2f(0, 1); glVertex2f(-1, -1);
+		glTexCoord2f(1, 1); glVertex2f(1, -1);
+		glTexCoord2f(1, 0); glVertex2f(1, 1);
+		glTexCoord2f(0, 0); glVertex2f(-1, 1);
+		glEnd();
 
-	glDisable(GL_TEXTURE_2D);
+		glDisable(GL_TEXTURE_2D);
+	}
 
 	glutSwapBuffers();
 }
@@ -116,14 +135,16 @@ void keyb(unsigned char key, int x, int y)
 	case 27:
 		exit(0);
 
-	case 's':
-		if(write_ppm("shot.ppm", fb, xsz, ysz)) {
-			printf("captured screenshot shot.ppm\n");
-		}
-		break;
-
 	case 'r':
 		need_update = true;
+		glutPostRedisplay();
+		break;
+
+	case 'd':
+		dbg_glrender = !dbg_glrender;
+		if(dbg_glrender) {
+			printf("DEBUG GL RENDER\n");
+		}
 		glutPostRedisplay();
 		break;
 
@@ -160,7 +181,7 @@ void motion(int x, int y)
 		cam_theta += dx * ROT_SCALE;
 		cam_phi += dy * ROT_SCALE;
 
-		if(cam_phi < -89) cam_phi = 89;
+		if(cam_phi < -89) cam_phi = -89;
 		if(cam_phi > 89) cam_phi = 89;
 
 		need_update = true;

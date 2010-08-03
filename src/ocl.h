@@ -27,7 +27,7 @@ struct CLMemBuffer {
 	void *ptr;
 };
 
-CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, void *buf);
+CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, void *buf = 0);
 void destroy_mem_buffer(CLMemBuffer *mbuf);
 
 void *map_mem_buffer(CLMemBuffer *mbuf, int rdwr);
@@ -72,7 +72,7 @@ public:
 
 	bool set_argi(int arg, int val);
 	bool set_argf(int arg, float val);
-	bool set_arg_buffer(int arg, int rdwr, size_t sz, void *buf);
+	bool set_arg_buffer(int arg, int rdwr, size_t sz, void *buf = 0);
 	CLMemBuffer *get_arg_buffer(int arg);
 
 	bool build();
