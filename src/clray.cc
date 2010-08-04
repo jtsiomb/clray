@@ -9,6 +9,7 @@
 #endif
 #include "rt.h"
 #include "matrix.h"
+#include "mesh.h"
 
 void cleanup();
 void disp();
@@ -24,12 +25,33 @@ static bool need_update = true;
 static float cam_theta, cam_phi = 25.0;
 static float cam_dist = 10.0;
 
-static bool dbg_glrender;
+static bool dbg_glrender = true;
+
+static Scene scn;
 
 int main(int argc, char **argv)
 {
 	glutInitWindowSize(800, 600);
 	glutInit(&argc, argv);
+
+	int loaded = 0;
+	for(int i=1; i<argc; i++) {
+		if(!scn.load(argv[i])) {
+			fprintf(stderr, "failed to load scene: %s\n", argv[i]);
+			return false;
+		}
+		loaded++;
+	}
+
+	if(!loaded) {
+		fprintf(stderr, "you must specify a scene file to load\n");
+		return false;
+	}
+	if(!scn.get_num_faces()) {
+		fprintf(stderr, "didn't load any polygons\n");
+		return false;
+	}
+
 	glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
 	glutCreateWindow("OpenCL Raytracer");
 
@@ -42,7 +64,7 @@ int main(int argc, char **argv)
 	glutMouseFunc(mouse);
 	glutMotionFunc(motion);
 
-	if(!init_renderer(xsz, ysz)) {
+	if(!init_renderer(xsz, ysz, &scn)) {
 		return 1;
 	}
 	atexit(cleanup);
@@ -92,16 +114,18 @@ void disp()
 		set_xform(mat.m, inv_trans.m);
 		glPopMatrix();
 
-		if(!render()) {
-			exit(1);
+		if(!dbg_glrender) {
+			if(!render()) {
+				exit(1);
+			}
+			need_update = false;
 		}
-		need_update = false;
 	}
 
 	if(dbg_glrender) {
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glLoadMatrixf(inv_mat.m);
-		dbg_render_gl();
+		dbg_render_gl(&scn);
 	} else {
 		glEnable(GL_TEXTURE_2D);
 

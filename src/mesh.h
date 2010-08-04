@@ -34,6 +34,10 @@ public:
 	std::vector<Mesh*> meshes;
 	std::vector<Material> matlib;
 
+	bool add_mesh(Mesh *m);
+
+	int get_num_faces() const;
+
 	bool load(const char *fname);
 	bool load(FILE *fp);
 };

@@ -115,6 +115,26 @@ static const char *dirname(const char *str);
 
 static map<string, int> matnames;
 
+bool Scene::add_mesh(Mesh *m)
+{
+	// make sure triangles have material ids
+	for(size_t i=0; i<m->faces.size(); i++) {
+		m->faces[i].matid = m->matid;
+	}
+	meshes.push_back(m);
+	return true;
+}
+
+int Scene::get_num_faces() const
+{
+	int num_faces = 0;
+	for(size_t i=0; i<meshes.size(); i++) {
+		num_faces += meshes[i]->faces.size();
+	}
+	printf("get_num_faces() = %d\n", num_faces);
+	return num_faces;
+}
+
 
 #define INVALID_IDX		INT_MIN
 
@@ -200,7 +220,7 @@ bool Scene::load(FILE *fp)
 			if(!obj.f.empty()) {
 				Mesh *mesh = cons_mesh(&obj);
 				mesh->matid = matnames[obj.cur_mat];
-				meshes.push_back(mesh);
+				add_mesh(mesh);
 				obj_added++;
 
 				obj.f.clear();	// clean the face list
@@ -252,6 +272,7 @@ bool Scene::load(FILE *fp)
 					mat.kr = 0.0;	// TODO
 					mat.spow = vmtl[i].shininess;
 
+					matlib.push_back(mat);
 					matnames[vmtl[i].name] = i;
 				}
 			}
@@ -309,7 +330,7 @@ bool Scene::load(FILE *fp)
 	if(!obj.f.empty()) {
 		Mesh *mesh = cons_mesh(&obj);
 		mesh->matid = matnames[obj.cur_mat];
-		meshes.push_back(mesh);
+		add_mesh(mesh);
 		obj_added++;
 	}
 
@@ -342,16 +363,24 @@ static Mesh *cons_mesh(obj_file *obj)
 			face.v[j].pos[0] = obj->v[f->v[j]].x;
 			face.v[j].pos[1] = obj->v[f->v[j]].y;
 			face.v[j].pos[2] = obj->v[f->v[j]].z;
+			face.v[j].pos[3] = 0.0;
 
 			int nidx = f->n[j] < 0 ? 0 : f->n[j];
 			face.v[j].normal[0] = obj->vn[nidx].x;
 			face.v[j].normal[1] = obj->vn[nidx].y;
 			face.v[j].normal[2] = obj->vn[nidx].z;
+			face.v[j].normal[3] = 0.0;
 
 			int tidx = f->t[j] < 0 ? 0 : f->t[j];
 			face.v[j].tex[0] = obj->vt[tidx].x;
 			face.v[j].tex[1] = obj->vt[tidx].y;
 		}
+
+		face.normal[0] = face.v[0].normal[0];
+		face.normal[1] = face.v[1].normal[1];
+		face.normal[2] = face.v[2].normal[2];
+		face.normal[3] = 0.0;
+
 		mesh->faces.push_back(face);
 	}
 
@@ -390,6 +419,7 @@ static bool read_materials(FILE *fp, vector<obj_mat> *vmtl)
 		case CMD_NEWMTL:
 			// add the previous material, and start a new one
 			if(mat.name.length() > 0) {
+				printf("Adding material: %s\n", mat.name.c_str());
 				vmtl->push_back(mat);
 				mat.reset();
 			}
@@ -442,6 +472,7 @@ static bool read_materials(FILE *fp, vector<obj_mat> *vmtl)
 	}
 
 	if(mat.name.length() > 0) {
+		printf("Adding material: %s\n", mat.name.c_str());
 		vmtl->push_back(mat);
 	}
 	return true;
@@ -603,9 +634,10 @@ static bool find_file(char *res, int sz, const char *fname, const char *path, co
 			end++;
 		}
 
-		int sz = end - beg + 1;
-		char *pathname = (char*)alloca(sz + fnamelen + 2);
-		memcpy(pathname, beg, sz);
+		int res_len = end - beg;
+		char *pathname = (char*)alloca(res_len + fnamelen + 2);
+		memcpy(pathname, beg, res_len);
+		pathname[res_len] = 0;
 		strcat(pathname, "/");
 		strcat(pathname, fname);
 
@@ -615,7 +647,7 @@ static bool find_file(char *res, int sz, const char *fname, const char *path, co
 			return true;
 		}
 
-		beg += sz;
+		beg += res_len;
 	}
 	return false;
 }
@@ -630,7 +662,7 @@ static const char *dirname(const char *str)
 		strncpy(buf, str, PATH_MAX);
 		char *ptr = strrchr(buf, '/');
 
-		if(*ptr) *ptr = 0;
+		if(ptr && *ptr) *ptr = 0;
 	}
 	return buf;
 }

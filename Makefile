@@ -5,7 +5,7 @@ bin = test
 
 CXX = g++
 CXXFLAGS = -pedantic -Wall -g
-LDFLAGS = $(libgl) $(libcl)
+LDFLAGS = $(libgl) $(libcl) -lpthread
 
 ifeq ($(shell uname -s), Darwin)
 	libgl = -framework OpenGL -framework GLUT

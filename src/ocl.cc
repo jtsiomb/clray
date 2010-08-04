@@ -239,6 +239,7 @@ bool CLProgram::set_argf(int idx, float val)
 
 bool CLProgram::set_arg_buffer(int idx, int rdwr, size_t sz, void *ptr)
 {
+	printf("create argument %d buffer: %d bytes\n", idx, (int)sz);
 	CLMemBuffer *buf;
 
 	if(!(buf = create_mem_buffer(rdwr, sz, ptr))) {

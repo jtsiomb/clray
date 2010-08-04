@@ -41,34 +41,12 @@ struct Light {
 };
 
 static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg);
+static Face *create_face_buffer(Mesh **meshes, int num_meshes);
 
+static Face *faces;
 static Ray *prim_rays;
 static CLProgram *prog;
 static int global_size;
-
-static Face faces[] = {
-	{/* face0 */
-		{
-			{{-1, 0, 0, 0}, {0, 0, -1, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
-			{{0, 1, 0, 0}, {0, 0, -1, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
-			{{1, 0, 0, 0}, {0, 0, -1, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}
-		},
-		{0, 0, -1, 0}, 0, {0, 0, 0}
-	},
-	{/* face1 */
-		{
-			{{-5, 0, -3, 0}, {0, 1, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
-			{{0, 0, 3, 0}, {0, 1, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
-			{{5, 0, -3, 0}, {0, 1, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}
-		},
-		{0, 1, 0, 0}, 1, {0, 0, 0}
-	}
-};
-
-static Material matlib[] = {
-	{{1, 0, 0, 1}, {1, 1, 1, 1}, 0, 0, 60.0, 0},
-	{{0.2, 0.8, 0.3, 1}, {0, 0, 0, 0}, 0, 0, 0, 0}
-};
 
 static Light lightlist[] = {
 	{{-10, 10, -20, 0}, {1, 1, 1, 1}}
@@ -78,12 +56,12 @@ static Light lightlist[] = {
 static RendInfo rinf;
 
 
-bool init_renderer(int xsz, int ysz)
+bool init_renderer(int xsz, int ysz, Scene *scn)
 {
 	// render info
 	rinf.xsz = xsz;
 	rinf.ysz = ysz;
-	rinf.num_faces = sizeof faces / sizeof *faces;
+	rinf.num_faces = scn->get_num_faces();
 	rinf.num_lights = sizeof lightlist / sizeof *lightlist;
 	rinf.max_iter = 6;
 
@@ -102,11 +80,17 @@ bool init_renderer(int xsz, int ysz)
 		return false;
 	}
 
+	/*Face **/faces = create_face_buffer(&scn->meshes[0], scn->meshes.size());
+	if(!faces) {
+		fprintf(stderr, "failed to create face buffer\n");
+		return false;
+	}
+
 	/* setup argument buffers */
 	prog->set_arg_buffer(KARG_FRAMEBUFFER, ARG_WR, xsz * ysz * 4 * sizeof(float));
 	prog->set_arg_buffer(KARG_RENDER_INFO, ARG_RD, sizeof rinf, &rinf);
-	prog->set_arg_buffer(KARG_FACES, ARG_RD, sizeof faces, faces);
-	prog->set_arg_buffer(KARG_MATLIB, ARG_RD, sizeof matlib, matlib);
+	prog->set_arg_buffer(KARG_FACES, ARG_RD, rinf.num_faces, faces);
+	prog->set_arg_buffer(KARG_MATLIB, ARG_RD, scn->matlib.size() * sizeof(Material), &scn->matlib[0]);
 	prog->set_arg_buffer(KARG_LIGHTS, ARG_RD, sizeof lightlist, lightlist);
 	prog->set_arg_buffer(KARG_PRIM_RAYS, ARG_RD, xsz * ysz * sizeof *prim_rays, prim_rays);
 	prog->set_arg_buffer(KARG_XFORM, ARG_RD, 16 * sizeof(float));
@@ -125,18 +109,26 @@ void destroy_renderer()
 
 bool render()
 {
+	printf("Running kernel...");
+	fflush(stdout);
 	if(!prog->run(1, global_size)) {
 		return false;
 	}
+	printf("done\n");
 
-	CLMemBuffer *mbuf = prog->get_arg_buffer(0);
+	CLMemBuffer *mbuf = prog->get_arg_buffer(KARG_FRAMEBUFFER);
 	void *fb = map_mem_buffer(mbuf, MAP_RD);
+	if(!fb) {
+		fprintf(stderr, "FAILED\n");
+		return false;
+	}
+
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rinf.xsz, rinf.ysz, GL_RGBA, GL_FLOAT, fb);
 	unmap_mem_buffer(mbuf);
 	return true;
 }
 
-void dbg_render_gl()
+void dbg_render_gl(Scene *scn)
 {
 	glPushAttrib(GL_ENABLE_BIT | GL_TRANSFORM_BIT);
 
@@ -149,8 +141,9 @@ void dbg_render_gl()
 	gluPerspective(45.0, (float)rinf.xsz / (float)rinf.ysz, 0.5, 1000.0);
 
 	glBegin(GL_TRIANGLES);
-	for(int i=0; i<rinf.num_faces; i++) {
-		Material *mat = matlib + faces[i].matid;
+	int num_faces = scn->get_num_faces();
+	for(int i=0; i<num_faces; i++) {
+		Material *mat = &scn->matlib[faces[i].matid];
 		glColor3f(mat->kd[0], mat->kd[1], mat->kd[2]);
 
 		for(int j=0; j<3; j++) {
@@ -158,6 +151,18 @@ void dbg_render_gl()
 			glVertex3f(pos[0], pos[1], pos[2]);
 		}
 	}
+
+	/*for(size_t i=0; i<scn->meshes.size(); i++) {
+		Material *mat = &scn->matlib[scn->meshes[i]->matid];
+
+		glColor3f(mat->kd[0], mat->kd[1], mat->kd[2]);
+		for(size_t j=0; j<scn->meshes[i]->faces.size(); j++) {
+			for(int k=0; k<3; k++) {
+				float *pos = scn->meshes[i]->faces[j].v[k].pos;
+				glVertex3f(pos[0], pos[1], pos[2]);
+			}
+		}
+	}*/
 	glEnd();
 
 	glPopMatrix();
@@ -172,20 +177,20 @@ void set_xform(float *matrix, float *invtrans)
 
 	float *mem = (float*)map_mem_buffer(mbuf_xform, MAP_WR);
 	memcpy(mem, matrix, 16 * sizeof *mem);
-	printf("-- xform:\n");
+	/*printf("-- xform:\n");
 	for(int i=0; i<16; i++) {
 		printf("%2.3f\t", mem[i]);
 		if(i % 4 == 3) putchar('\n');
-	}
+	}*/
 	unmap_mem_buffer(mbuf_xform);
 
 	mem = (float*)map_mem_buffer(mbuf_invtrans, MAP_WR);
 	memcpy(mem, invtrans, 16 * sizeof *mem);
-	printf("-- inverse-transpose:\n");
+	/*printf("-- inverse-transpose:\n");
 	for(int i=0; i<16; i++) {
 		printf("%2.3f\t", mem[i]);
 		if(i % 4 == 3) putchar('\n');
-	}
+	}*/
 	unmap_mem_buffer(mbuf_invtrans);
 }
 
@@ -207,4 +212,24 @@ static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg)
 
 	Ray ray = {{0, 0, 0, 1}, {px, py, -pz, 1}};
 	return ray;
+}
+
+static Face *create_face_buffer(Mesh **meshes, int num_meshes)
+{
+	int num_faces = 0;
+	for(int i=0; i<num_meshes; i++) {
+		num_faces += meshes[i]->faces.size();
+	}
+	printf("constructing face buffer with %d faces (out of %d meshes)\n", num_faces, num_meshes);
+
+	Face *faces = new Face[num_faces];
+	memset(faces, 0, num_faces * sizeof *faces);
+	Face *fptr = faces;
+
+	for(int i=0; i<num_meshes; i++) {
+		for(size_t j=0; j<meshes[i]->faces.size(); j++) {
+			*fptr++ = meshes[i]->faces[j];
+		}
+	}
+	return faces;
 }
