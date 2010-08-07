@@ -125,6 +125,11 @@ bool Scene::add_mesh(Mesh *m)
 	return true;
 }
 
+int Scene::get_num_meshes() const
+{
+	return (int)meshes.size();
+}
+
 int Scene::get_num_faces() const
 {
 	int num_faces = 0;
@@ -133,6 +138,27 @@ int Scene::get_num_faces() const
 	}
 	printf("get_num_faces() = %d\n", num_faces);
 	return num_faces;
+}
+
+int Scene::get_num_materials() const
+{
+	return (int)matlib.size();
+}
+
+Material *Scene::get_materials()
+{
+	if(matlib.empty()) {
+		return 0;
+	}
+	return &matlib[0];
+}
+
+const Material *Scene::get_materials() const
+{
+	if(matlib.empty()) {
+		return 0;
+	}
+	return &matlib[0];
 }
 
 
@@ -638,7 +664,9 @@ static bool find_file(char *res, int sz, const char *fname, const char *path, co
 		char *pathname = (char*)alloca(res_len + fnamelen + 2);
 		memcpy(pathname, beg, res_len);
 		pathname[res_len] = 0;
-		strcat(pathname, "/");
+		if(res_len) {
+			strcat(pathname, "/");
+		}
 		strcat(pathname, fname);
 
 		if((fp = fopen(pathname, mode))) {
@@ -648,6 +676,7 @@ static bool find_file(char *res, int sz, const char *fname, const char *path, co
 		}
 
 		beg += res_len;
+		if(*beg == ':') beg++;
 	}
 	return false;
 }
@@ -662,7 +691,11 @@ static const char *dirname(const char *str)
 		strncpy(buf, str, PATH_MAX);
 		char *ptr = strrchr(buf, '/');
 
-		if(ptr && *ptr) *ptr = 0;
+		if(ptr && *ptr) {
+			*ptr = 0;
+		} else {
+			strcpy(buf, ".");
+		}
 	}
 	return buf;
 }

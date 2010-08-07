@@ -41,7 +41,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;_USE_MATH_DEFINES"
+				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;_USE_MATH_DEFINES;_CRT_SECURE_NO_WARNINGS"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
 				RuntimeLibrary="3"
@@ -115,7 +115,7 @@
 				Name="VCCLCompilerTool"
 				Optimization="2"
 				EnableIntrinsicFunctions="true"
-				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;_USE_MATH_DEFINES"
+				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;_USE_MATH_DEFINES;_CRT_SECURE_NO_WARNINGS"
 				RuntimeLibrary="2"
 				EnableFunctionLevelLinking="true"
 				UsePrecompiledHeader="0"
@@ -175,6 +175,14 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\matrix.cc"
+				>
+			</File>
+			<File
+				RelativePath=".\src\matrix.h"
+				>
+			</File>
+			<File
 				RelativePath=".\src\mesh.cc"
 				>
 			</File>
@@ -192,6 +200,10 @@
 			</File>
 			<File
 				RelativePath=".\src\ocl_errstr.h"
+				>
+			</File>
+			<File
+				RelativePath=".\src\ogl.h"
 				>
 			</File>
 			<File

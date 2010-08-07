@@ -2,15 +2,7 @@
 #include <string.h>
 #include <math.h>
 #include <assert.h>
-
-#ifndef __APPLE__
-#include <GL/gl.h>
-#include <GL/glu.h>
-#else
-#include <OpenGL/gl.h>
-#include <OpenGL/glu.h>
-#endif
-
+#include "ogl.h"
 #include "ocl.h"
 #include "mesh.h"
 
@@ -23,7 +15,9 @@ enum {
 	KARG_LIGHTS,
 	KARG_PRIM_RAYS,
 	KARG_XFORM,
-	KARG_INVTRANS_XFORM
+	KARG_INVTRANS_XFORM,
+
+	NUM_KERNEL_ARGS
 };
 
 struct RendInfo {
@@ -89,12 +83,16 @@ bool init_renderer(int xsz, int ysz, Scene *scn)
 	/* setup argument buffers */
 	prog->set_arg_buffer(KARG_FRAMEBUFFER, ARG_WR, xsz * ysz * 4 * sizeof(float));
 	prog->set_arg_buffer(KARG_RENDER_INFO, ARG_RD, sizeof rinf, &rinf);
-	prog->set_arg_buffer(KARG_FACES, ARG_RD, rinf.num_faces, faces);
-	prog->set_arg_buffer(KARG_MATLIB, ARG_RD, scn->matlib.size() * sizeof(Material), &scn->matlib[0]);
+	prog->set_arg_buffer(KARG_FACES, ARG_RD, rinf.num_faces * sizeof(Face), faces);
+	prog->set_arg_buffer(KARG_MATLIB, ARG_RD, scn->get_num_materials() * sizeof(Material), scn->get_materials());
 	prog->set_arg_buffer(KARG_LIGHTS, ARG_RD, sizeof lightlist, lightlist);
 	prog->set_arg_buffer(KARG_PRIM_RAYS, ARG_RD, xsz * ysz * sizeof *prim_rays, prim_rays);
 	prog->set_arg_buffer(KARG_XFORM, ARG_RD, 16 * sizeof(float));
 	prog->set_arg_buffer(KARG_INVTRANS_XFORM, ARG_RD, 16 * sizeof(float));
+
+	if(prog->get_num_args() < NUM_KERNEL_ARGS) {
+		return false;
+	}
 
 	delete [] prim_rays;
 
@@ -140,11 +138,18 @@ void dbg_render_gl(Scene *scn)
 	glLoadIdentity();
 	gluPerspective(45.0, (float)rinf.xsz / (float)rinf.ysz, 0.5, 1000.0);
 
+	Material *materials = scn->get_materials();
+
 	glBegin(GL_TRIANGLES);
 	int num_faces = scn->get_num_faces();
 	for(int i=0; i<num_faces; i++) {
-		Material *mat = &scn->matlib[faces[i].matid];
-		glColor3f(mat->kd[0], mat->kd[1], mat->kd[2]);
+		Material *mat = materials ? materials + faces[i].matid : 0;
+
+		if(mat) {
+			glColor3f(mat->kd[0], mat->kd[1], mat->kd[2]);
+		} else {
+			glColor3f(1, 1, 1);
+		}
 
 		for(int j=0; j<3; j++) {
 			float *pos = faces[i].v[j].pos;

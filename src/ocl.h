@@ -53,6 +53,8 @@ struct CLArg {
 		cl_float4 vval;
 		CLMemBuffer *mbuf;
 	} v;
+
+	CLArg();
 };
 
 
@@ -74,6 +76,7 @@ public:
 	bool set_argf(int arg, float val);
 	bool set_arg_buffer(int arg, int rdwr, size_t sz, void *buf = 0);
 	CLMemBuffer *get_arg_buffer(int arg);
+	int get_num_args() const;
 
 	bool build();
 

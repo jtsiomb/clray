@@ -156,6 +156,12 @@ bool read_mem_buffer(CLMemBuffer *mbuf, size_t sz, void *dest)
 }
 
 
+CLArg::CLArg()
+{
+	memset(this, 0, sizeof *this);
+}
+
+
 CLProgram::CLProgram(const char *kname)
 {
 	prog = 0;
@@ -242,7 +248,8 @@ bool CLProgram::set_arg_buffer(int idx, int rdwr, size_t sz, void *ptr)
 	printf("create argument %d buffer: %d bytes\n", idx, (int)sz);
 	CLMemBuffer *buf;
 
-	if(!(buf = create_mem_buffer(rdwr, sz, ptr))) {
+	if(sz <= 0 || !(buf = create_mem_buffer(rdwr, sz, ptr))) {
+		fprintf(stderr, "invalid size while creating argument buffer %d: %d\n", idx, (int)sz);
 		return false;
 	}
 
@@ -260,6 +267,17 @@ CLMemBuffer *CLProgram::get_arg_buffer(int arg)
 		return 0;
 	}
 	return args[arg].v.mbuf;
+}
+
+int CLProgram::get_num_args() const
+{
+	int num_args = 0;
+	for(size_t i=0; i<args.size(); i++) {
+		if(args[i].type != ARGTYPE_NONE) {
+			num_args++;
+		}
+	}
+	return num_args;
 }
 
 bool CLProgram::build()
