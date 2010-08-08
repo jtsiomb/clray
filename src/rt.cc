@@ -16,6 +16,7 @@ enum {
 	KARG_PRIM_RAYS,
 	KARG_XFORM,
 	KARG_INVTRANS_XFORM,
+	KARG_OUTFACES,	/* DBG */
 
 	NUM_KERNEL_ARGS
 };
@@ -24,6 +25,7 @@ struct RendInfo {
 	int xsz, ysz;
 	int num_faces, num_lights;
 	int max_iter;
+	int dbg;
 };
 
 struct Ray {
@@ -58,6 +60,7 @@ bool init_renderer(int xsz, int ysz, Scene *scn)
 	rinf.num_faces = scn->get_num_faces();
 	rinf.num_lights = sizeof lightlist / sizeof *lightlist;
 	rinf.max_iter = 6;
+	rinf.dbg = 8;
 
 	/* calculate primary rays */
 	prim_rays = new Ray[xsz * ysz];
@@ -89,6 +92,7 @@ bool init_renderer(int xsz, int ysz, Scene *scn)
 	prog->set_arg_buffer(KARG_PRIM_RAYS, ARG_RD, xsz * ysz * sizeof *prim_rays, prim_rays);
 	prog->set_arg_buffer(KARG_XFORM, ARG_RD, 16 * sizeof(float));
 	prog->set_arg_buffer(KARG_INVTRANS_XFORM, ARG_RD, 16 * sizeof(float));
+	prog->set_arg_buffer(KARG_OUTFACES, ARG_WR, rinf.num_faces * sizeof(Face));
 
 	if(prog->get_num_args() < NUM_KERNEL_ARGS) {
 		return false;
@@ -114,6 +118,20 @@ bool render()
 	}
 	printf("done\n");
 
+	/* DEBUG */
+	CLMemBuffer *dbgbuf = prog->get_arg_buffer(KARG_OUTFACES);
+	Face *outfaces = (Face*)map_mem_buffer(dbgbuf, MAP_RD);
+	for(int i=0; i<rinf.num_faces; i++) {
+		if(!(faces[i] == outfaces[i])) {
+			fprintf(stderr, "SKATA %d\n", i);
+			return false;
+		}
+		faces[i] = outfaces[i];
+	}
+	printf("equality test passed\n");
+	unmap_mem_buffer(dbgbuf);
+
+
 	CLMemBuffer *mbuf = prog->get_arg_buffer(KARG_FRAMEBUFFER);
 	void *fb = map_mem_buffer(mbuf, MAP_RD);
 	if(!fb) {
@@ -126,12 +144,27 @@ bool render()
 	return true;
 }
 
+void dbg_set_dbg(int dbg)
+{
+	printf("setting dbg: %d\n", dbg);
+
+	CLMemBuffer *mbuf = prog->get_arg_buffer(KARG_RENDER_INFO);
+	RendInfo *rinf = (RendInfo*)map_mem_buffer(mbuf, MAP_WR);
+	rinf->dbg = dbg;
+	unmap_mem_buffer(mbuf);
+}
+
 void dbg_render_gl(Scene *scn)
 {
+	float lpos[] = {-1, 1, 10, 0};
 	glPushAttrib(GL_ENABLE_BIT | GL_TRANSFORM_BIT);
 
 	glDisable(GL_TEXTURE_2D);
 	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_LIGHTING);
+	glEnable(GL_LIGHT0);
+	glLightfv(GL_LIGHT0, GL_POSITION, lpos);
+	glEnable(GL_COLOR_MATERIAL);
 
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
@@ -153,7 +186,9 @@ void dbg_render_gl(Scene *scn)
 
 		for(int j=0; j<3; j++) {
 			float *pos = faces[i].v[j].pos;
-			glVertex3f(pos[0], pos[1], pos[2]);
+			float *norm = faces[i].normal;
+			glNormal3fv(norm);
+			glVertex3fv(pos);
 		}
 	}
 

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <errno.h>
 #include <limits.h>
 #include <string>
@@ -114,6 +115,26 @@ static bool find_file(char *res, int sz, const char *fname, const char *path = "
 static const char *dirname(const char *str);
 
 static map<string, int> matnames;
+
+
+#define FEQ(a, b)	(fabs((a) - (b)) < 1e-8)
+bool Face::operator ==(const Face &f) const
+{
+	for(int i=0; i<3; i++) {
+		for(int j=0; j<3; j++) {
+			if(!FEQ(v[i].pos[j], f.v[i].pos[j])) {
+				return false;
+			}
+			if(!FEQ(v[i].normal[j], f.v[i].normal[j])) {
+				return false;
+			}
+		}
+		if(!FEQ(normal[i], f.normal[i])) {
+			return false;
+		}
+	}
+	return true;
+}
 
 bool Scene::add_mesh(Mesh *m)
 {

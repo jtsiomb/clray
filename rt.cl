@@ -4,6 +4,7 @@ struct RendInfo {
 	int xsz, ysz;
 	int num_faces, num_lights;
 	int max_iter;
+	int dbg;
 };
 
 struct Vertex {
@@ -59,17 +60,26 @@ kernel void render(global float4 *fb,
 		global const struct Light *lights,
 		global const struct Ray *primrays,
 		global const float *xform,
-		global const float *invtrans)
+		global const float *invtrans,
+		global struct Face *outfaces)
 {
 	int idx = get_global_id(0);
+	
+	if(idx == 0) {
+		for(int i=0; i<rinf->num_faces; i++) {
+			outfaces[i] = faces[i];
+		}
+	}
 
 	struct Ray ray = transform_ray(primrays + idx, xform, invtrans);
 
 	struct SurfPoint sp, sp0;
 	sp0.t = FLT_MAX;
 	sp0.obj = 0;
+	
+	int max_faces = min(rinf->num_faces, rinf->dbg);
 
-	for(int i=0; i<rinf->num_faces; i++) {
+	for(int i=0; i<max_faces; i++) {
 		if(intersect(ray, faces + i, &sp) && sp.t < sp0.t) {
 			sp0 = sp;
 		}
@@ -94,7 +104,7 @@ float4 shade(struct Ray ray, struct SurfPoint sp,
 		entering = false;
 	}
 
-	float4 dcol = (float4)(0, 0, 0, 0);
+	float4 dcol = (float4)(0.07, 0.07, 0.07, 0);
 	float4 scol = (float4)(0, 0, 0, 0);
 
 	for(int i=0; i<num_lights; i++) {
