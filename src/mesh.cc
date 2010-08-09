@@ -59,6 +59,8 @@ struct Vector3 {
 
 	Vector3() { x = y = z = 0.0; }
 	Vector3(float a, float b, float c) { x = a; y = b; z = c; }
+
+	void normalize() { float len = sqrt(x * x + y * y + z * z); x /= len; y /= len; z /= len; }
 };
 
 struct Vector2 {
@@ -116,6 +118,9 @@ static const char *parse_map();
 
 static bool find_file(char *res, int sz, const char *fname, const char *path = ".", const char *mode = "rb");
 static const char *dirname(const char *str);
+
+static Vector3 operator -(const Vector3 &a, const Vector3 &b);
+static Vector3 cross(const Vector3 &a, const Vector3 &b);
 
 static map<string, int> matnames;
 
@@ -406,13 +411,14 @@ static Mesh *cons_mesh(obj_file *obj)
 
 	for(size_t i=0; i<obj->f.size(); i++) {
 		Face face;
+		Vector3 v[3];
 
 		for(int j=0; j<3; j++) {
 			obj_face *f = &obj->f[i];
 
-			face.v[j].pos[0] = obj->v[f->v[j]].x;
-			face.v[j].pos[1] = obj->v[f->v[j]].y;
-			face.v[j].pos[2] = obj->v[f->v[j]].z;
+			face.v[j].pos[0] = v[j].x = obj->v[f->v[j]].x;
+			face.v[j].pos[1] = v[j].y = obj->v[f->v[j]].y;
+			face.v[j].pos[2] = v[j].z = obj->v[f->v[j]].z;
 			face.v[j].pos[3] = 0.0;
 
 			int nidx = f->n[j] < 0 ? 0 : f->n[j];
@@ -426,9 +432,14 @@ static Mesh *cons_mesh(obj_file *obj)
 			face.v[j].tex[1] = obj->vt[tidx].y;
 		}
 
-		face.normal[0] = face.v[0].normal[0];
-		face.normal[1] = face.v[1].normal[1];
-		face.normal[2] = face.v[2].normal[2];
+		Vector3 a = v[1] - v[0];
+		Vector3 b = v[2] - v[0];
+		Vector3 n = cross(a, b);
+		n.normalize();
+
+		face.normal[0] = n.x;
+		face.normal[1] = n.y;
+		face.normal[2] = n.z;
 		face.normal[3] = 0.0;
 
 		mesh->faces.push_back(face);
@@ -728,4 +739,18 @@ static const char *dirname(const char *str)
 		}
 	}
 	return buf;
+}
+
+static Vector3 operator -(const Vector3 &a, const Vector3 &b)
+{
+	return Vector3(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+static Vector3 cross(const Vector3 &a, const Vector3 &b)
+{
+	Vector3 res;
+	res.x = a.y * b.z - a.z * b.y;
+	res.y = a.z * b.x - a.x * b.z;
+	res.z = a.x * b.y - a.y * b.x;
+	return res;
 }

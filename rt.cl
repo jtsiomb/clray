@@ -5,7 +5,6 @@ struct RendInfo {
 	int num_faces, num_lights;
 	int max_iter;
 	float4 ambient;
-	int dbg;
 };
 
 struct Vertex {
@@ -56,7 +55,6 @@ struct Scene {
 #define MIN_ENERGY	0.001
 #define EPSILON		1e-6
 
-//float4 trace(struct Ray ray, struct Scene *scn);
 float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp);
 bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *sp);
 bool intersect(struct Ray ray, global const struct Face *face, struct SurfPoint *sp);
@@ -74,16 +72,9 @@ kernel void render(global float4 *fb,
 		global const struct Light *lights,
 		global const struct Ray *primrays,
 		global const float *xform,
-		global const float *invtrans,
-		global struct Face *outfaces)
+		global const float *invtrans)
 {
 	int idx = get_global_id(0);
-
-	if(!idx) {
-		for(int i=0; i<rinf->num_faces; i++) {
-			outfaces[i] = faces[i];
-		}
-	}
 
 	struct Scene scn;
 	scn.ambient = rinf->ambient;
@@ -95,8 +86,6 @@ kernel void render(global float4 *fb,
 
 	struct Ray ray = primrays[idx];
 	transform_ray(&ray, xform, invtrans);
-
-	//fb[idx] = trace(ray, &scn);
 
 	float4 pixel = (float4)(0, 0, 0, 0);
 	float4 energy = (float4)(1.0, 1.0, 1.0, 1.0);
@@ -120,19 +109,6 @@ kernel void render(global float4 *fb,
 
 	fb[idx] = pixel;
 }
-
-/*float4 trace(struct Ray ray, struct Scene *scn)
-{
-	float4 color;
-	struct SurfPoint sp;
-
-	if(find_intersection(ray, scn, &sp)) {
-		color = shade(ray, scn, &sp);
-	} else {
-		color = (float4)(0, 0, 0, 0);
-	}
-	return color;
-}*/
 
 float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
 {
@@ -162,8 +138,8 @@ float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
 			float diff = fmax(dot(ldir, norm), 0.0f);
 			dcol += sp->mat.kd * diff * scn->lights[i].color;
 
-			//float spec = powr(fmax(dot(ldir, vref), 0.0f), mat.spow);
-			//scol += sp->mat.ks * spec * scn->lights[i].color;
+			float spec = powr(fmax(dot(ldir, vref), 0.0f), sp->mat.spow);
+			scol += sp->mat.ks * spec * scn->lights[i].color;
 		}
 	}
 
@@ -221,14 +197,14 @@ bool intersect(struct Ray ray, global const struct Face *face, struct SurfPoint 
 	float4 bc = calc_bary(pt, face, norm);
 	float bc_sum = bc.x + bc.y + bc.z;
 
-	if(bc_sum < 0.0 || bc_sum > 1.0 + EPSILON) {
+	if(bc_sum < 1.0 - EPSILON || bc_sum > 1.0 + EPSILON) {
 		return false;
 		bc *= 1.2;
 	}
 
 	sp->t = t;
 	sp->pos = pt;
-	sp->norm = norm;
+	sp->norm = -normalize(face->v[0].normal * bc.x + face->v[1].normal * bc.y + face->v[2].normal * bc.z);
 	sp->obj = face;
 	sp->dbg = bc;
 	return true;

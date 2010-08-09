@@ -26,7 +26,6 @@ static float cam_theta, cam_phi = 25.0;
 static float cam_dist = 10.0;
 
 static bool dbg_glrender = true;
-static int dbg_dbg = 8;
 
 static Scene scn;
 
@@ -170,18 +169,6 @@ void keyb(unsigned char key, int x, int y)
 		if(dbg_glrender) {
 			printf("DEBUG GL RENDER\n");
 		}
-		glutPostRedisplay();
-		break;
-
-	case '=':
-		dbg_set_dbg(++dbg_dbg);
-		need_update = true;
-		glutPostRedisplay();
-		break;
-
-	case '-':
-		dbg_set_dbg(--dbg_dbg);
-		need_update = true;
 		glutPostRedisplay();
 		break;
 

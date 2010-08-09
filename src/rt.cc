@@ -16,7 +16,6 @@ enum {
 	KARG_PRIM_RAYS,
 	KARG_XFORM,
 	KARG_INVTRANS_XFORM,
-	KARG_OUTFACES,	/* DBG */
 
 	NUM_KERNEL_ARGS
 };
@@ -26,7 +25,6 @@ struct RendInfo {
 	int num_faces, num_lights;
 	int max_iter;
 	float ambient[4];
-	int dbg;
 };
 
 struct Ray {
@@ -64,7 +62,6 @@ bool init_renderer(int xsz, int ysz, Scene *scn)
 	rinf.num_faces = scn->get_num_faces();
 	rinf.num_lights = sizeof lightlist / sizeof *lightlist;
 	rinf.max_iter = 6;
-	rinf.dbg = 8;
 
 	/* calculate primary rays */
 	prim_rays = new Ray[xsz * ysz];
@@ -96,7 +93,6 @@ bool init_renderer(int xsz, int ysz, Scene *scn)
 	prog->set_arg_buffer(KARG_PRIM_RAYS, ARG_RD, xsz * ysz * sizeof *prim_rays, prim_rays);
 	prog->set_arg_buffer(KARG_XFORM, ARG_RD, 16 * sizeof(float));
 	prog->set_arg_buffer(KARG_INVTRANS_XFORM, ARG_RD, 16 * sizeof(float));
-	prog->set_arg_buffer(KARG_OUTFACES, ARG_WR, rinf.num_faces * sizeof(Face));
 
 	if(prog->get_num_args() < NUM_KERNEL_ARGS) {
 		return false;
@@ -126,19 +122,6 @@ bool render()
 	}
 	printf("done\n");
 
-	/* DEBUG */
-	CLMemBuffer *dbgbuf = prog->get_arg_buffer(KARG_OUTFACES);
-	Face *outfaces = (Face*)map_mem_buffer(dbgbuf, MAP_RD);
-	for(int i=0; i<rinf.num_faces; i++) {
-		if(!(faces[i] == outfaces[i])) {
-			fprintf(stderr, "SKATA %d\n", i);
-			return false;
-		}
-		faces[i] = outfaces[i];
-	}
-	printf("equality test passed\n");
-	unmap_mem_buffer(dbgbuf);
-
 
 	CLMemBuffer *mbuf = prog->get_arg_buffer(KARG_FRAMEBUFFER);
 	void *fb = map_mem_buffer(mbuf, MAP_RD);
@@ -150,16 +133,6 @@ bool render()
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rinf.xsz, rinf.ysz, GL_RGBA, GL_FLOAT, fb);
 	unmap_mem_buffer(mbuf);
 	return true;
-}
-
-void dbg_set_dbg(int dbg)
-{
-	printf("setting dbg: %d\n", dbg);
-
-	CLMemBuffer *mbuf = prog->get_arg_buffer(KARG_RENDER_INFO);
-	RendInfo *rinf = (RendInfo*)map_mem_buffer(mbuf, MAP_WR);
-	rinf->dbg = dbg;
-	unmap_mem_buffer(mbuf);
 }
 
 void dbg_render_gl(Scene *scn)
@@ -199,18 +172,6 @@ void dbg_render_gl(Scene *scn)
 			glVertex3fv(pos);
 		}
 	}
-
-	/*for(size_t i=0; i<scn->meshes.size(); i++) {
-		Material *mat = &scn->matlib[scn->meshes[i]->matid];
-
-		glColor3f(mat->kd[0], mat->kd[1], mat->kd[2]);
-		for(size_t j=0; j<scn->meshes[i]->faces.size(); j++) {
-			for(int k=0; k<3; k++) {
-				float *pos = scn->meshes[i]->faces[j].v[k].pos;
-				glVertex3f(pos[0], pos[1], pos[2]);
-			}
-		}
-	}*/
 	glEnd();
 
 	glPopMatrix();
