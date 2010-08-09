@@ -41,7 +41,7 @@ struct SurfPoint {
 	float t;
 	float4 pos, norm, dbg;
 	global const struct Face *obj;
-	global const struct Material *mat;
+	struct Material mat;
 };
 
 struct Scene {
@@ -65,6 +65,7 @@ float4 reflect(float4 v, float4 n);
 float4 transform(float4 v, global const float *xform);
 void transform_ray(struct Ray *ray, global const float *xform, global const float *invtrans);
 float4 calc_bary(float4 pt, global const struct Face *face, float4 norm);
+float mean(float4 v);
 
 kernel void render(global float4 *fb,
 		global const struct RendInfo *rinf,
@@ -97,12 +98,27 @@ kernel void render(global float4 *fb,
 
 	//fb[idx] = trace(ray, &scn);
 
-	struct SurfPoint sp;
-	if(find_intersection(ray, &scn, &sp)) {
-		fb[idx] = shade(ray, &scn, &sp);
-	} else {
-		fb[idx] = (float4)(0, 0, 0, 0);
+	float4 pixel = (float4)(0, 0, 0, 0);
+	float4 energy = (float4)(1.0, 1.0, 1.0, 1.0);
+	int iter = 0;
+
+	while(iter++ < rinf->max_iter && mean(energy) > MIN_ENERGY) {
+		struct SurfPoint sp;
+		if(find_intersection(ray, &scn, &sp)) {
+			pixel += shade(ray, &scn, &sp) * energy;
+
+			float4 refl_col = sp.mat.ks * sp.mat.kr;
+
+			ray.origin = sp.pos;
+			ray.dir = reflect(-ray.dir, sp.norm);
+
+			energy *= sp.mat.ks * sp.mat.kr;
+		} else {
+			iter = INT_MAX - 1;	// to break out of the loop
+		}
 	}
+
+	fb[idx] = pixel;
 }
 
 /*float4 trace(struct Ray ray, struct Scene *scn)
@@ -122,14 +138,13 @@ float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
 {
 	float4 norm = sp->norm;
 	bool entering = true;
-	struct Material mat = *sp->mat;
 
 	if(dot(ray.dir, norm) >= 0.0) {
 		norm = -norm;
 		entering = false;
 	}
 
-	float4 dcol = scn->ambient * mat.kd;
+	float4 dcol = scn->ambient * sp->mat.kd;
 	float4 scol = (float4)(0, 0, 0, 0);
 
 	for(int i=0; i<scn->num_lights; i++) {
@@ -145,24 +160,12 @@ float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
 			float4 vref = reflect(vdir, norm);
 
 			float diff = fmax(dot(ldir, norm), 0.0f);
-			dcol += mat.kd * diff * scn->lights[i].color;
+			dcol += sp->mat.kd * diff * scn->lights[i].color;
 
 			//float spec = powr(fmax(dot(ldir, vref), 0.0f), mat.spow);
-			//scol += mat.ks * spec * scn->lights[i].color;
+			//scol += sp->mat.ks * spec * scn->lights[i].color;
 		}
 	}
-
-	/*float4 refl_col = mat.ks * mat.kr;
-	float refl_coeff = (refl_col.x + refl_col.y + refl_col.z) / 3.0;
-
-	if(refl_coeff > MIN_ENERGY) {
-		struct Ray refl_ray;
-		refl_ray.origin = sp->pos;
-		refl_ray.dir = reflect(-ray.dir, norm);
-		refl_ray.energy *= refl_coeff;
-
-		scol += trace(refl_ray, scn) * refl_col;
-	}*/
 
 	return dcol + scol;
 }
@@ -186,7 +189,7 @@ bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint
 
 	if(spres) {
 		*spres = sp0;
-		spres->mat = scn->matlib + sp0.obj->matid;
+		spres->mat = scn->matlib[sp0.obj->matid];
 	}
 	return true;
 }
@@ -284,4 +287,9 @@ float4 calc_bary(float4 pt, global const struct Face *face, float4 norm)
 	bc.y = a1 / area;
 	bc.z = a2 / area;
 	return bc;
+}
+
+float mean(float4 v)
+{
+	return native_divide(v.x + v.y + v.z, 3.0);
 }

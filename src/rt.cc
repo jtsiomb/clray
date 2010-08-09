@@ -46,7 +46,7 @@ static CLProgram *prog;
 static int global_size;
 
 static Light lightlist[] = {
-	{{-10, 13, -20, 0}, {1, 1, 1, 1}}
+	{{-8, 15, -18, 0}, {1, 1, 1, 1}}
 };
 
 

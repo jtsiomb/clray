@@ -99,6 +99,7 @@ struct obj_mat {
 		name = tex_dif = tex_spec = tex_shin = tex_alpha = tex_refl = tex_bump = "";
 		shininess = 0;
 		ior = alpha = 1;
+		refl = 0.0;
 	}
 };
 
