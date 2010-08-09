@@ -35,7 +35,6 @@ struct Light {
 
 struct Ray {
 	float4 origin, dir;
-	float energy, pad[3];
 };
 
 struct SurfPoint {
@@ -78,6 +77,12 @@ kernel void render(global float4 *fb,
 		global struct Face *outfaces)
 {
 	int idx = get_global_id(0);
+
+	if(!idx) {
+		for(int i=0; i<rinf->num_faces; i++) {
+			outfaces[i] = faces[i];
+		}
+	}
 
 	struct Scene scn;
 	scn.ambient = rinf->ambient;

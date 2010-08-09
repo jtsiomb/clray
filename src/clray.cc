@@ -53,7 +53,7 @@ int main(int argc, char **argv)
 		return false;
 	}
 
-	glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
+	glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE);
 	glutCreateWindow("OpenCL Raytracer");
 
 	xsz = glutGet(GLUT_WINDOW_WIDTH);

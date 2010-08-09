@@ -31,7 +31,6 @@ struct RendInfo {
 
 struct Ray {
 	float origin[4], dir[4];
-	float energy;
 };
 
 struct Light {
@@ -259,7 +258,7 @@ static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg)
 	py *= 100.0;
 	pz *= 100.0;
 
-	Ray ray = {{0, 0, 0, 1}, {px, py, -pz, 1}, 1.0};
+	Ray ray = {{0, 0, 0, 1}, {px, py, -pz, 1}};
 	return ray;
 }
 
