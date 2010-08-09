@@ -57,7 +57,7 @@ struct Scene {
 #define MIN_ENERGY	0.001
 #define EPSILON		1e-6
 
-float4 trace(struct Ray ray, struct Scene *scn);
+//float4 trace(struct Ray ray, struct Scene *scn);
 float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp);
 bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *sp);
 bool intersect(struct Ray ray, global const struct Face *face, struct SurfPoint *sp);
@@ -90,10 +90,17 @@ kernel void render(global float4 *fb,
 	struct Ray ray = primrays[idx];
 	transform_ray(&ray, xform, invtrans);
 
-	fb[idx] = trace(ray, &scn);
+	//fb[idx] = trace(ray, &scn);
+
+	struct SurfPoint sp;
+	if(find_intersection(ray, &scn, &sp)) {
+		fb[idx] = shade(ray, &scn, &sp);
+	} else {
+		fb[idx] = (float4)(0, 0, 0, 0);
+	}
 }
 
-float4 trace(struct Ray ray, struct Scene *scn)
+/*float4 trace(struct Ray ray, struct Scene *scn)
 {
 	float4 color;
 	struct SurfPoint sp;
@@ -104,7 +111,7 @@ float4 trace(struct Ray ray, struct Scene *scn)
 		color = (float4)(0, 0, 0, 0);
 	}
 	return color;
-}
+}*/
 
 float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
 {
@@ -140,7 +147,7 @@ float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
 		}
 	}
 
-	float4 refl_col = mat.ks * mat.kr;
+	/*float4 refl_col = mat.ks * mat.kr;
 	float refl_coeff = (refl_col.x + refl_col.y + refl_col.z) / 3.0;
 
 	if(refl_coeff > MIN_ENERGY) {
@@ -150,7 +157,7 @@ float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
 		refl_ray.energy *= refl_coeff;
 
 		scol += trace(refl_ray, scn) * refl_col;
-	}
+	}*/
 
 	return dcol + scol;
 }
