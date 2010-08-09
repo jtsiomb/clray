@@ -28,6 +28,7 @@ using namespace std;
 	CMD(KA),		\
 	CMD(KD),		\
 	CMD(KS),		\
+	CMD(KR),		\
 	CMD(NS),		\
 	CMD(NI),		\
 	CMD(D),			\
@@ -84,6 +85,7 @@ struct obj_mat {
 	float shininess;	// Ns
 	float ior;			// Ni
 	float alpha;		// d, Tr
+	float refl;			// Kr (my extesnsion)
 
 	string tex_dif, tex_spec, tex_shin, tex_alpha;	// map_Kd, map_Ks, map_Ns, map_d
 	string tex_refl;	// refl -type sphere|cube file
@@ -316,7 +318,7 @@ bool Scene::load(FILE *fp)
 					mat.ks[2] = vmtl[i].specular.z;
 
 					mat.kt = 1.0 - vmtl[i].alpha;
-					mat.kr = 0.0;	// TODO
+					mat.kr = vmtl[i].refl;
 					mat.spow = vmtl[i].shininess;
 
 					matlib.push_back(mat);
@@ -485,6 +487,12 @@ static bool read_materials(FILE *fp, vector<obj_mat> *vmtl)
 
 		case CMD_KS:
 			parse_color(&mat.specular);
+			break;
+
+		case CMD_KR:
+			if((tok = strtok(0, SEP)) && is_float(tok)) {
+				mat.refl = atof(tok);
+			}
 			break;
 
 		case CMD_NS:

@@ -25,11 +25,13 @@ struct RendInfo {
 	int xsz, ysz;
 	int num_faces, num_lights;
 	int max_iter;
+	float ambient[4];
 	int dbg;
 };
 
 struct Ray {
 	float origin[4], dir[4];
+	float energy;
 };
 
 struct Light {
@@ -45,7 +47,7 @@ static CLProgram *prog;
 static int global_size;
 
 static Light lightlist[] = {
-	{{-10, 10, -20, 0}, {1, 1, 1, 1}}
+	{{-10, 13, -20, 0}, {1, 1, 1, 1}}
 };
 
 
@@ -55,6 +57,9 @@ static RendInfo rinf;
 bool init_renderer(int xsz, int ysz, Scene *scn)
 {
 	// render info
+	rinf.ambient[0] = rinf.ambient[1] = rinf.ambient[2] = 0.075;
+	rinf.ambient[3] = 0.0;
+
 	rinf.xsz = xsz;
 	rinf.ysz = ysz;
 	rinf.num_faces = scn->get_num_faces();
@@ -95,6 +100,10 @@ bool init_renderer(int xsz, int ysz, Scene *scn)
 	prog->set_arg_buffer(KARG_OUTFACES, ARG_WR, rinf.num_faces * sizeof(Face));
 
 	if(prog->get_num_args() < NUM_KERNEL_ARGS) {
+		return false;
+	}
+
+	if(!prog->build()) {
 		return false;
 	}
 
@@ -250,7 +259,7 @@ static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg)
 	py *= 100.0;
 	pz *= 100.0;
 
-	Ray ray = {{0, 0, 0, 1}, {px, py, -pz, 1}};
+	Ray ray = {{0, 0, 0, 1}, {px, py, -pz, 1}, 1.0};
 	return ray;
 }
 
