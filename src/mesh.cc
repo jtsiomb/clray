@@ -165,7 +165,6 @@ int Scene::get_num_faces() const
 	for(size_t i=0; i<meshes.size(); i++) {
 		num_faces += meshes[i]->faces.size();
 	}
-	printf("get_num_faces() = %d\n", num_faces);
 	return num_faces;
 }
 

@@ -115,7 +115,7 @@ void destroy_renderer()
 
 bool render()
 {
-	printf("Running kernel...");
+	printf("Running kernel... ");
 	fflush(stdout);
 	if(!prog->run(1, global_size)) {
 		return false;
@@ -135,17 +135,35 @@ bool render()
 	return true;
 }
 
+static void dbg_set_gl_material(Material *mat)
+{
+	static Material def_mat = {{0.7, 0.7, 0.7, 1}, {0, 0, 0, 0}, 0, 0, 0};
+
+	if(!mat) mat = &def_mat;
+
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, mat->kd);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, mat->ks);
+	glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, mat->spow);
+}
+
 void dbg_render_gl(Scene *scn)
 {
-	float lpos[] = {-1, 1, 10, 0};
 	glPushAttrib(GL_ENABLE_BIT | GL_TRANSFORM_BIT);
+
+	for(int i=0; i<rinf.num_lights; i++) {
+		float lpos[4];
+
+		memcpy(lpos, lightlist[i].pos, sizeof lpos);
+		lpos[3] = 1.0;
+
+		glLightfv(GL_LIGHT0 + i, GL_POSITION, lpos);
+		glLightfv(GL_LIGHT0 + i, GL_DIFFUSE, lightlist[i].color);
+	}
 
 	glDisable(GL_TEXTURE_2D);
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_LIGHTING);
 	glEnable(GL_LIGHT0);
-	glLightfv(GL_LIGHT0, GL_POSITION, lpos);
-	glEnable(GL_COLOR_MATERIAL);
 
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
@@ -154,22 +172,22 @@ void dbg_render_gl(Scene *scn)
 
 	Material *materials = scn->get_materials();
 
-	glBegin(GL_TRIANGLES);
 	int num_faces = scn->get_num_faces();
-	for(int i=0; i<num_faces; i++) {
-		Material *mat = materials ? materials + faces[i].matid : 0;
+	int cur_mat = -1;
 
-		if(mat) {
-			glColor3f(mat->kd[0], mat->kd[1], mat->kd[2]);
-		} else {
-			glColor3f(1, 1, 1);
+	for(int i=0; i<num_faces; i++) {
+		if(faces[i].matid != cur_mat) {
+			if(cur_mat != -1) {
+				glEnd();
+			}
+			dbg_set_gl_material(materials ? materials + faces[i].matid : 0);
+			cur_mat = faces[i].matid;
+			glBegin(GL_TRIANGLES);
 		}
 
 		for(int j=0; j<3; j++) {
-			float *pos = faces[i].v[j].pos;
-			float *norm = faces[i].normal;
-			glNormal3fv(norm);
-			glVertex3fv(pos);
+			glNormal3fv(faces[i].v[j].normal);
+			glVertex3fv(faces[i].v[j].pos);
 		}
 	}
 	glEnd();

@@ -167,7 +167,9 @@ void keyb(unsigned char key, int x, int y)
 	case 'd':
 		dbg_glrender = !dbg_glrender;
 		if(dbg_glrender) {
-			printf("DEBUG GL RENDER\n");
+			printf("Debug OpenGL rendering\n");
+		} else {
+			printf("Raytracing\n");
 		}
 		glutPostRedisplay();
 		break;

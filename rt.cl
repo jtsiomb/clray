@@ -53,7 +53,7 @@ struct Scene {
 };
 
 #define MIN_ENERGY	0.001
-#define EPSILON		1e-6
+#define EPSILON		1e-5
 
 float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp);
 bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *sp);
@@ -204,7 +204,7 @@ bool intersect(struct Ray ray, global const struct Face *face, struct SurfPoint 
 
 	sp->t = t;
 	sp->pos = pt;
-	sp->norm = -normalize(face->v[0].normal * bc.x + face->v[1].normal * bc.y + face->v[2].normal * bc.z);
+	sp->norm = normalize(face->v[0].normal * bc.x + face->v[1].normal * bc.y + face->v[2].normal * bc.z);
 	sp->obj = face;
 	sp->dbg = bc;
 	return true;
