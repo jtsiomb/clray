@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 #include <map>
-#include "mesh.h"
+#include "scene.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX	512

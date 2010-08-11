@@ -1,10 +1,10 @@
 /* vim: set ft=opencl:ts=4:sw=4 */
 
 struct RendInfo {
+	float4 ambient;
 	int xsz, ysz;
 	int num_faces, num_lights;
 	int max_iter;
-	float4 ambient;
 };
 
 struct Vertex {
@@ -88,7 +88,7 @@ kernel void render(global float4 *fb,
 	transform_ray(&ray, xform, invtrans);
 
 	float4 pixel = (float4)(0, 0, 0, 0);
-	float4 energy = (float4)(1.0, 1.0, 1.0, 1.0);
+	float4 energy = (float4)(1.0, 1.0, 1.0, 0.0);
 	int iter = 0;
 
 	while(iter++ < rinf->max_iter && mean(energy) > MIN_ENERGY) {
@@ -136,10 +136,10 @@ float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
 			float4 vref = reflect(vdir, norm);
 
 			float diff = fmax(dot(ldir, norm), 0.0f);
-			dcol += sp->mat.kd * diff * scn->lights[i].color;
+			dcol += sp->mat.kd * scn->lights[i].color * diff;
 
 			float spec = powr(fmax(dot(ldir, vref), 0.0f), sp->mat.spow);
-			scol += sp->mat.ks * spec * scn->lights[i].color;
+			scol += sp->mat.ks * scn->lights[i].color * spec;
 		}
 	}
 

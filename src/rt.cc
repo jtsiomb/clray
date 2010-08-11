@@ -4,7 +4,7 @@
 #include <assert.h>
 #include "ogl.h"
 #include "ocl.h"
-#include "mesh.h"
+#include "scene.h"
 
 // kernel arguments
 enum {
@@ -21,10 +21,10 @@ enum {
 };
 
 struct RendInfo {
+	float ambient[4];
 	int xsz, ysz;
 	int num_faces, num_lights;
 	int max_iter;
-	float ambient[4];
 };
 
 struct Ray {
@@ -44,7 +44,7 @@ static CLProgram *prog;
 static int global_size;
 
 static Light lightlist[] = {
-	{{-8, 15, -18, 0}, {1, 1, 1, 1}}
+	{{-8, 15, 18, 0}, {1, 1, 1, 1}}
 };
 
 
@@ -54,7 +54,7 @@ static RendInfo rinf;
 bool init_renderer(int xsz, int ysz, Scene *scn)
 {
 	// render info
-	rinf.ambient[0] = rinf.ambient[1] = rinf.ambient[2] = 0.075;
+	rinf.ambient[0] = rinf.ambient[1] = rinf.ambient[2] = 0.0;
 	rinf.ambient[3] = 0.0;
 
 	rinf.xsz = xsz;
@@ -115,19 +115,21 @@ void destroy_renderer()
 
 bool render()
 {
-	printf("Running kernel... ");
-	fflush(stdout);
 	if(!prog->run(1, global_size)) {
 		return false;
 	}
-	printf("done\n");
-
 
 	CLMemBuffer *mbuf = prog->get_arg_buffer(KARG_FRAMEBUFFER);
 	void *fb = map_mem_buffer(mbuf, MAP_RD);
 	if(!fb) {
 		fprintf(stderr, "FAILED\n");
 		return false;
+	}
+
+	static int foo = 0;
+	if(!foo++) {
+		bool write_ppm(const char *fname, float *fb, int xsz, int ysz);
+		write_ppm("foo.ppm", (float*)fb, rinf.xsz, rinf.ysz);
 	}
 
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rinf.xsz, rinf.ysz, GL_RGBA, GL_FLOAT, fb);
@@ -148,7 +150,7 @@ static void dbg_set_gl_material(Material *mat)
 
 void dbg_render_gl(Scene *scn)
 {
-	glPushAttrib(GL_ENABLE_BIT | GL_TRANSFORM_BIT);
+	glPushAttrib(GL_ENABLE_BIT | GL_TRANSFORM_BIT | GL_LIGHTING_BIT);
 
 	for(int i=0; i<rinf.num_lights; i++) {
 		float lpos[4];
@@ -158,12 +160,12 @@ void dbg_render_gl(Scene *scn)
 
 		glLightfv(GL_LIGHT0 + i, GL_POSITION, lpos);
 		glLightfv(GL_LIGHT0 + i, GL_DIFFUSE, lightlist[i].color);
+		glEnable(GL_LIGHT0 + i);
 	}
 
 	glDisable(GL_TEXTURE_2D);
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_LIGHTING);
-	glEnable(GL_LIGHT0);
 
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
@@ -194,6 +196,8 @@ void dbg_render_gl(Scene *scn)
 
 	glPopMatrix();
 	glPopAttrib();
+
+	assert(glGetError() == GL_NO_ERROR);
 }
 
 void set_xform(float *matrix, float *invtrans)
@@ -204,20 +208,10 @@ void set_xform(float *matrix, float *invtrans)
 
 	float *mem = (float*)map_mem_buffer(mbuf_xform, MAP_WR);
 	memcpy(mem, matrix, 16 * sizeof *mem);
-	/*printf("-- xform:\n");
-	for(int i=0; i<16; i++) {
-		printf("%2.3f\t", mem[i]);
-		if(i % 4 == 3) putchar('\n');
-	}*/
 	unmap_mem_buffer(mbuf_xform);
 
 	mem = (float*)map_mem_buffer(mbuf_invtrans, MAP_WR);
 	memcpy(mem, invtrans, 16 * sizeof *mem);
-	/*printf("-- inverse-transpose:\n");
-	for(int i=0; i<16; i++) {
-		printf("%2.3f\t", mem[i]);
-		if(i % 4 == 3) putchar('\n');
-	}*/
 	unmap_mem_buffer(mbuf_invtrans);
 }
 

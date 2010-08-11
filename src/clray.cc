@@ -9,7 +9,7 @@
 #endif
 #include "rt.h"
 #include "matrix.h"
-#include "mesh.h"
+#include "scene.h"
 
 void cleanup();
 void disp();
@@ -25,7 +25,7 @@ static bool need_update = true;
 static float cam_theta, cam_phi = 25.0;
 static float cam_dist = 10.0;
 
-static bool dbg_glrender = true;
+static bool dbg_glrender = false;
 
 static Scene scn;
 
@@ -128,6 +128,7 @@ void disp()
 		dbg_render_gl(&scn);
 	} else {
 		glEnable(GL_TEXTURE_2D);
+		glDisable(GL_LIGHTING);
 
 		glBegin(GL_QUADS);
 		glColor3f(1, 1, 1);

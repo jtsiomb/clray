@@ -1,7 +1,7 @@
 #ifndef RT_H_
 #define RT_H_
 
-#include "mesh.h"
+#include "scene.h"
 
 bool init_renderer(int xsz, int ysz, Scene *scn);
 void destroy_renderer();
