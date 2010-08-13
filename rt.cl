@@ -212,8 +212,7 @@ bool intersect(struct Ray ray, global const struct Face *face, struct SurfPoint 
 
 float4 reflect(float4 v, float4 n)
 {
-	float4 res = 2.0f * dot(v, n) * n - v;
-	return res;
+	return 2.0f * dot(v, n) * n - v;
 }
 
 float4 transform(float4 v, global const float *xform)

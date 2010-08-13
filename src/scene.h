@@ -1,6 +1,7 @@
 #ifndef MESH_H_
 #define MESH_H_
 
+#include <stdio.h>
 #include <vector>
 
 struct Vertex {
@@ -31,7 +32,7 @@ struct Mesh {
 	int matid;
 };
 
-/*enum {
+enum {
 	KDAXIS_X,
 	KDAXIS_Y,
 	KDAXIS_Z
@@ -46,13 +47,13 @@ struct Mesh {
 struct KDNode {
 	int axis;
 	float pt;
-};*/
+};
 
 class Scene {
 public:
 	std::vector<Mesh*> meshes;
 	std::vector<Material> matlib;
-	//std::vector<KDNode> kdtree;
+	std::vector<KDNode> kdtree;
 
 	bool add_mesh(Mesh *m);
 	int get_num_meshes() const;
@@ -65,7 +66,7 @@ public:
 	bool load(const char *fname);
 	bool load(FILE *fp);
 
-	//void build_kdtree();
+	void build_kdtree();
 };
 
 #endif	/* MESH_H_ */
