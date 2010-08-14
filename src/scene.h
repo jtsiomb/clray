@@ -33,6 +33,13 @@ struct Mesh {
 	int matid;
 };
 
+class AABBox {
+public:
+	float min[4], max[4];
+
+	float calc_surface_area() const;
+};
+
 enum {
 	KDAXIS_X,
 	KDAXIS_Y,
@@ -48,9 +55,10 @@ enum {
 struct KDNode {
 	int axis;
 	float pt;
+	AABBox aabb;
 
 	KDNode *left, *right;
-	std::list<Face*> faces;
+	std::list<const Face*> faces;
 };
 
 struct KDNodeGPU {
