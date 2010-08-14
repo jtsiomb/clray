@@ -36,7 +36,6 @@ struct Light {
 };
 
 static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg);
-static Face *create_face_buffer(Mesh **meshes, int num_meshes);
 
 static Face *faces;
 static Ray *prim_rays;
@@ -78,8 +77,7 @@ bool init_renderer(int xsz, int ysz, Scene *scn)
 		return false;
 	}
 
-	/*Face **/faces = create_face_buffer(&scn->meshes[0], scn->meshes.size());
-	if(!faces) {
+	if(!(faces = (Face*)scn->get_face_buffer())) {
 		fprintf(stderr, "failed to create face buffer\n");
 		return false;
 	}
@@ -233,24 +231,4 @@ static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg)
 
 	Ray ray = {{0, 0, 0, 1}, {px, py, -pz, 1}};
 	return ray;
-}
-
-static Face *create_face_buffer(Mesh **meshes, int num_meshes)
-{
-	int num_faces = 0;
-	for(int i=0; i<num_meshes; i++) {
-		num_faces += meshes[i]->faces.size();
-	}
-	printf("constructing face buffer with %d faces (out of %d meshes)\n", num_faces, num_meshes);
-
-	Face *faces = new Face[num_faces];
-	memset(faces, 0, num_faces * sizeof *faces);
-	Face *fptr = faces;
-
-	for(int i=0; i<num_meshes; i++) {
-		for(size_t j=0; j<meshes[i]->faces.size(); j++) {
-			*fptr++ = meshes[i]->faces[j];
-		}
-	}
-	return faces;
 }

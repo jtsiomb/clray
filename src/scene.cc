@@ -20,13 +20,37 @@ bool Face::operator ==(const Face &f) const
 	return true;
 }
 
+Scene::Scene()
+{
+	facebuf = 0;
+	num_faces = -1;
+	kdtree = 0;
+}
+
+Scene::~Scene()
+{
+	delete [] facebuf;
+}
+
 bool Scene::add_mesh(Mesh *m)
 {
 	// make sure triangles have material ids
 	for(size_t i=0; i<m->faces.size(); i++) {
 		m->faces[i].matid = m->matid;
 	}
-	meshes.push_back(m);
+
+	try {
+		meshes.push_back(m);
+	}
+	catch(...) {
+		return false;
+	}
+
+	// invalidate facebuffer and count
+	delete [] facebuf;
+	facebuf = 0;
+	num_faces = -1;
+
 	return true;
 }
 
@@ -37,7 +61,11 @@ int Scene::get_num_meshes() const
 
 int Scene::get_num_faces() const
 {
-	int num_faces = 0;
+	if(num_faces >= 0) {
+		return num_faces;
+	}
+
+	num_faces = 0;
 	for(size_t i=0; i<meshes.size(); i++) {
 		num_faces += meshes[i]->faces.size();
 	}
@@ -63,4 +91,43 @@ const Material *Scene::get_materials() const
 		return 0;
 	}
 	return &matlib[0];
+}
+
+const Face *Scene::get_face_buffer() const
+{
+	if(facebuf) {
+		return facebuf;
+	}
+
+	int num_meshes = get_num_meshes();
+
+	printf("constructing face buffer with %d faces (out of %d meshes)\n", get_num_faces(), num_meshes);
+	facebuf = new Face[num_faces];
+	Face *fptr = facebuf;
+
+	for(int i=0; i<num_meshes; i++) {
+		for(size_t j=0; j<meshes[i]->faces.size(); j++) {
+			*fptr++ = meshes[i]->faces[j];
+		}
+	}
+	return facebuf;
+}
+
+static void build_kdtree(KDNode **kd, std::list<const Face*> *faces);
+
+void Scene::build_kdtree()
+{
+	const Face *faces = get_face_buffer();
+	int num_faces = get_num_faces();
+
+	std::list<const Face*> facelist;
+	for(int i=0; i<num_faces; i++) {
+		facelist.push_back(faces + i);
+	}
+
+	::build_kdtree(&kdtree, &facelist);
+}
+
+static void build_kdtree(KDNode **kd, std::list<const Face*> *faces)
+{
 }

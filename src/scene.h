@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <vector>
+#include <list>
 
 struct Vertex {
 	float pos[4];
@@ -47,13 +48,31 @@ enum {
 struct KDNode {
 	int axis;
 	float pt;
+
+	KDNode *left, *right;
+	std::list<Face*> faces;
 };
 
+struct KDNodeGPU {
+	int axis;
+	float pt;
+};
+
+
 class Scene {
+private:
+	mutable Face *facebuf;
+	mutable int num_faces;
+
 public:
 	std::vector<Mesh*> meshes;
 	std::vector<Material> matlib;
-	std::vector<KDNode> kdtree;
+
+	KDNode *kdtree;
+	std::vector<KDNode> kdtree_gpu;
+
+	Scene();
+	~Scene();
 
 	bool add_mesh(Mesh *m);
 	int get_num_meshes() const;
@@ -66,6 +85,7 @@ public:
 	bool load(const char *fname);
 	bool load(FILE *fp);
 
+	const Face *get_face_buffer() const;
 	void build_kdtree();
 };
 
