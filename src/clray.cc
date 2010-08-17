@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <errno.h>
 #ifndef __APPLE__
 #include <GL/glut.h>
@@ -25,7 +26,9 @@ static bool need_update = true;
 static float cam_theta, cam_phi = 25.0;
 static float cam_dist = 10.0;
 
-static bool dbg_glrender = false;
+static bool dbg_glrender = true;
+static bool dbg_show_kdtree = false;
+static bool dbg_show_obj = true;
 
 static Scene scn;
 
@@ -36,11 +39,46 @@ int main(int argc, char **argv)
 
 	int loaded = 0;
 	for(int i=1; i<argc; i++) {
-		if(!scn.load(argv[i])) {
-			fprintf(stderr, "failed to load scene: %s\n", argv[i]);
-			return false;
+		if(argv[i][0] == '-' && argv[i][2] == 0) {
+			switch(argv[i][1]) {
+			case 'i':
+				if(!argv[++i] || !isdigit(argv[i][0])) {
+					fprintf(stderr, "-i must be followed by the intersection cost\n");
+					return 1;
+				}
+
+				set_accel_param(ACCEL_PARAM_COST_INTERSECT, atoi(argv[i]));
+				break;
+
+			case 't':
+				if(!argv[++i] || !isdigit(argv[i][0])) {
+					fprintf(stderr, "-t must be followed by the traversal cost\n");
+					return 1;
+				}
+
+				set_accel_param(ACCEL_PARAM_COST_TRAVERSE, atoi(argv[i]));
+				break;
+
+			case 'c':
+				if(!argv[++i] || !isdigit(argv[i][0])) {
+					fprintf(stderr, "-c must be followed by the max number of items per leaf node\n");
+					return 1;
+				}
+
+				set_accel_param(ACCEL_PARAM_MAX_NODE_ITEMS, atoi(argv[i]));
+				break;
+
+			default:
+				fprintf(stderr, "unrecognized option: %s\n", argv[i]);
+				return 1;
+			}
+		} else {
+			if(!scn.load(argv[i])) {
+				fprintf(stderr, "failed to load scene: %s\n", argv[i]);
+				return false;
+			}
+			loaded++;
 		}
-		loaded++;
 	}
 
 	if(!loaded) {
@@ -68,6 +106,11 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	atexit(cleanup);
+
+	if(!scn.build_kdtree()) {
+		return 1;
+	}
+
 
 	/*glGenTextures(1, &tex);
 	glBindTexture(GL_TEXTURE_2D, tex);*/
@@ -125,7 +168,7 @@ void disp()
 	if(dbg_glrender) {
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glLoadMatrixf(inv_mat.m);
-		dbg_render_gl(&scn);
+		dbg_render_gl(&scn, dbg_show_kdtree, dbg_show_obj);
 	} else {
 		glEnable(GL_TEXTURE_2D);
 		glDisable(GL_LIGHTING);
@@ -173,6 +216,20 @@ void keyb(unsigned char key, int x, int y)
 			printf("Raytracing\n");
 		}
 		glutPostRedisplay();
+		break;
+
+	case 'k':
+		dbg_show_kdtree = !dbg_show_kdtree;
+		if(dbg_glrender) {
+			glutPostRedisplay();
+		}
+		break;
+
+	case 'o':
+		dbg_show_obj = !dbg_show_obj;
+		if(dbg_glrender) {
+			glutPostRedisplay();
+		}
 		break;
 
 	default:

@@ -2,11 +2,15 @@
 #include <float.h>
 #include <assert.h>
 #include "scene.h"
+#include "ogl.h"
 
 
-static int build_kdtree(KDNode *kd);
-static float eval_cost(const std::list<const Face*> &faces, const AABBox &aabb, int axis);
+static void draw_kdtree(const KDNode *node, int level = 0);
+static bool build_kdtree(KDNode *kd, int level = 0);
+static float eval_cost(const std::list<const Face*> &faces, const AABBox &aabb, int axis, float par_sarea = 1.0);
 static void free_kdtree(KDNode *node);
+static int kdtree_depth(const KDNode *node);
+static void print_item_counts(const KDNode *node, int level);
 
 
 static int accel_param[NUM_ACCEL_PARAMS] = {
@@ -155,12 +159,90 @@ const Face *Scene::get_face_buffer() const
 }
 
 
-void Scene::build_kdtree()
+void Scene::draw_kdtree() const
+{
+	glPushAttrib(GL_ENABLE_BIT);
+	glDisable(GL_LIGHTING);
+	glDepthMask(0);
+
+	glBegin(GL_LINES);
+	::draw_kdtree(kdtree, 0);
+	glEnd();
+
+	glDepthMask(1);
+	glPopAttrib();
+}
+
+static float palette[][3] = {
+	{0, 1, 0},
+	{0, 1, 0},
+	{0, 1, 0},
+	{1, 0, 0},
+	{1, 0, 0},
+	{1, 0, 0},
+	{0, 0, 1},
+	{0, 0, 1},
+	{0, 0, 1},
+	{1, 1, 0},
+	{1, 1, 0},
+	{1, 1, 0},
+	{0, 0, 1},
+	{0, 0, 1},
+	{0, 0, 1},
+	{1, 0, 1},
+	{1, 0, 1},
+	{1, 0, 1}
+};
+static int pal_size = sizeof palette / sizeof *palette;
+
+static void draw_kdtree(const KDNode *node, int level)
+{
+	if(!node) return;
+
+	draw_kdtree(node->left, level + 1);
+	draw_kdtree(node->right, level + 1);
+
+	glColor3fv(palette[level % pal_size]);
+
+	glVertex3fv(node->aabb.min);
+	glVertex3f(node->aabb.max[0], node->aabb.min[1], node->aabb.min[2]);
+	glVertex3f(node->aabb.max[0], node->aabb.min[1], node->aabb.min[2]);
+	glVertex3f(node->aabb.max[0], node->aabb.max[1], node->aabb.min[2]);
+	glVertex3f(node->aabb.max[0], node->aabb.max[1], node->aabb.min[2]);
+	glVertex3f(node->aabb.min[0], node->aabb.max[1], node->aabb.min[2]);
+	glVertex3f(node->aabb.min[0], node->aabb.max[1], node->aabb.min[2]);
+	glVertex3fv(node->aabb.min);
+
+	glVertex3f(node->aabb.min[0], node->aabb.min[1], node->aabb.max[2]);
+	glVertex3f(node->aabb.max[0], node->aabb.min[1], node->aabb.max[2]);
+	glVertex3f(node->aabb.max[0], node->aabb.min[1], node->aabb.max[2]);
+	glVertex3fv(node->aabb.max);
+	glVertex3fv(node->aabb.max);
+	glVertex3f(node->aabb.min[0], node->aabb.max[1], node->aabb.max[2]);
+	glVertex3f(node->aabb.min[0], node->aabb.max[1], node->aabb.max[2]);
+	glVertex3f(node->aabb.min[0], node->aabb.min[1], node->aabb.max[2]);
+
+	glVertex3fv(node->aabb.min);
+	glVertex3f(node->aabb.min[0], node->aabb.min[1], node->aabb.max[2]);
+	glVertex3f(node->aabb.max[0], node->aabb.min[1], node->aabb.min[2]);
+	glVertex3f(node->aabb.max[0], node->aabb.min[1], node->aabb.max[2]);
+	glVertex3f(node->aabb.max[0], node->aabb.max[1], node->aabb.min[2]);
+	glVertex3fv(node->aabb.max);
+	glVertex3f(node->aabb.min[0], node->aabb.max[1], node->aabb.min[2]);
+	glVertex3f(node->aabb.min[0], node->aabb.max[1], node->aabb.max[2]);
+}
+
+bool Scene::build_kdtree()
 {
 	const Face *faces = get_face_buffer();
 	int num_faces = get_num_faces();
 
 	printf("Constructing kd-tree out of %d faces ...\n", num_faces);
+
+	int icost = accel_param[ACCEL_PARAM_COST_INTERSECT];
+	int tcost = accel_param[ACCEL_PARAM_COST_TRAVERSE];
+	printf("  max items per leaf: %d\n", accel_param[ACCEL_PARAM_MAX_NODE_ITEMS]);
+	printf("  SAH parameters - tcost: %d - icost: %d\n", tcost, icost);
 
 	free_kdtree(kdtree);
 	kdtree = new KDNode;
@@ -197,17 +279,27 @@ void Scene::build_kdtree()
 	kdtree->cost = eval_cost(kdtree->faces, kdtree->aabb, kdtree->axis);
 
 	// now proceed splitting the root recursively
-	::build_kdtree(kdtree);
-}
-
-static int build_kdtree(KDNode *kd)
-{
-	int opt_max_items = accel_param[ACCEL_PARAM_MAX_NODE_ITEMS];
-	if(kd->num_faces == 0 || (opt_max_items > 1 && kd->num_faces < opt_max_items)) {
-		return 0;
+	if(!::build_kdtree(kdtree)) {
+		fprintf(stderr, "failed to build kdtree\n");
+		return false;
 	}
 
-	int axis = (kd->axis + 1) % 3;
+	printf("  tree depth: %d\n", kdtree_depth(kdtree));
+	print_item_counts(kdtree, 0);
+	return true;
+}
+
+static bool build_kdtree(KDNode *kd, int level)
+{
+	int opt_max_items = accel_param[ACCEL_PARAM_MAX_NODE_ITEMS];
+	int tcost = accel_param[ACCEL_PARAM_COST_TRAVERSE];
+
+	if(kd->num_faces == 0) {
+		return true;
+	}
+
+	int axis = level % 3;
+	//float parent_sa = kd->aabb.calc_surface_area();
 
 	float best_cost[2], best_sum_cost = FLT_MAX;
 	float best_split;
@@ -226,7 +318,7 @@ static int build_kdtree(KDNode *kd)
 
 			float left_cost = eval_cost(kd->faces, aabb_left, axis);
 			float right_cost = eval_cost(kd->faces, aabb_right, axis);
-			float sum_cost = left_cost + right_cost;
+			float sum_cost = left_cost + right_cost - tcost;	// tcost is added twice
 
 			if(sum_cost < best_sum_cost) {
 				best_cost[0] = left_cost;
@@ -237,8 +329,9 @@ static int build_kdtree(KDNode *kd)
 		}
 	}
 
-	if(best_sum_cost >= kd->cost) {
-		return 0;	// stop splitting if it doesn't reduce the cost
+	printf("current cost: %f,   best_cost: %f\n", kd->cost, best_sum_cost);
+	if(best_sum_cost > kd->cost && (opt_max_items == 0 || kd->num_faces <= opt_max_items)) {
+		return true;	// stop splitting if it doesn't reduce the cost
 	}
 	kd->pt = best_split;
 
@@ -247,7 +340,6 @@ static int build_kdtree(KDNode *kd)
 	kdleft = new KDNode;
 	kdright = new KDNode;
 
-	kdleft->axis = kdright->axis = axis;
 	kdleft->aabb = kdright->aabb = kd->aabb;
 
 	kdleft->aabb.max[axis] = best_split;
@@ -255,6 +347,8 @@ static int build_kdtree(KDNode *kd)
 
 	kdleft->cost = best_cost[0];
 	kdright->cost = best_cost[1];
+
+	//kdleft->axis = kdright->axis = (axis + 1) % 3;
 
 	it = kd->faces.begin();
 	while(it != kd->faces.end()) {
@@ -273,13 +367,15 @@ static int build_kdtree(KDNode *kd)
 			kdright->num_faces++;
 		}
 	}
+	kd->faces.clear();	// only leaves have faces
 
 	kd->left = kdleft;
 	kd->right = kdright;
-	return 0;
+
+	return build_kdtree(kd->left, level + 1) && build_kdtree(kd->right, level + 1);
 }
 
-static float eval_cost(const std::list<const Face*> &faces, const AABBox &aabb, int axis)
+static float eval_cost(const std::list<const Face*> &faces, const AABBox &aabb, int axis, float par_sarea)
 {
 	int num_inside = 0;
 	int tcost = accel_param[ACCEL_PARAM_COST_TRAVERSE];
@@ -297,7 +393,12 @@ static float eval_cost(const std::list<const Face*> &faces, const AABBox &aabb, 
 		}
 	}
 
-	return tcost + aabb.calc_surface_area() * num_inside * icost;
+	float sarea = aabb.calc_surface_area();
+	if(sarea < 1e-8) {
+		return FLT_MAX;	// heavily penalize 0-area voxels
+	}
+
+	return tcost + (sarea / par_sarea) * num_inside * icost;
 }
 
 static void free_kdtree(KDNode *node)
@@ -307,4 +408,26 @@ static void free_kdtree(KDNode *node)
 		free_kdtree(node->right);
 		delete node;
 	}
+}
+
+static int kdtree_depth(const KDNode *node)
+{
+	if(!node) return 0;
+
+	int left = kdtree_depth(node->left);
+	int right = kdtree_depth(node->right);
+	return (left > right ? left : right) + 1;
+}
+
+static void print_item_counts(const KDNode *node, int level)
+{
+	if(!node) return;
+
+	for(int i=0; i<level; i++) {
+		fputs("   ", stdout);
+	}
+	printf("- %d (cost: %f)\n", node->num_faces, node->cost);
+
+	print_item_counts(node->left, level + 1);
+	print_item_counts(node->right, level + 1);
 }

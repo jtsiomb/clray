@@ -98,7 +98,9 @@ public:
 	bool load(FILE *fp);
 
 	const Face *get_face_buffer() const;
-	void build_kdtree();
+
+	void draw_kdtree() const;
+	bool build_kdtree();
 };
 
 enum {
