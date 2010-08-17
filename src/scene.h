@@ -56,9 +56,13 @@ struct KDNode {
 	int axis;
 	float pt;
 	AABBox aabb;
+	float cost;
 
 	KDNode *left, *right;
+	int num_faces;	// cause on some implementations list::size() is O(n)
 	std::list<const Face*> faces;
+
+	KDNode();
 };
 
 struct KDNodeGPU {
@@ -96,5 +100,16 @@ public:
 	const Face *get_face_buffer() const;
 	void build_kdtree();
 };
+
+enum {
+	ACCEL_PARAM_MAX_TREE_DEPTH,
+	ACCEL_PARAM_MAX_NODE_ITEMS,
+	ACCEL_PARAM_COST_TRAVERSE,
+	ACCEL_PARAM_COST_INTERSECT,
+
+	NUM_ACCEL_PARAMS
+};
+
+void set_accel_param(int p, int v);
 
 #endif	/* MESH_H_ */

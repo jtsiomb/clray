@@ -1,6 +1,28 @@
 #include <math.h>
 #include <float.h>
+#include <assert.h>
 #include "scene.h"
+
+
+static int build_kdtree(KDNode *kd);
+static float eval_cost(const std::list<const Face*> &faces, const AABBox &aabb, int axis);
+static void free_kdtree(KDNode *node);
+
+
+static int accel_param[NUM_ACCEL_PARAMS] = {
+	75,	// max tree depth
+	0,	// max items per node (0 means ignore limit)
+	5,	// estimated traversal cost
+	15	// estimated interseciton cost
+};
+
+
+void set_accel_param(int p, int v)
+{
+	assert(p >= 0 && p < NUM_ACCEL_PARAMS);
+	accel_param[p] = v;
+}
+
 
 #define FEQ(a, b)	(fabs((a) - (b)) < 1e-8)
 bool Face::operator ==(const Face &f) const
@@ -28,6 +50,14 @@ float AABBox::calc_surface_area() const
 	float area3 = (max[0] - min[0]) * (max[3] - min[3]);
 
 	return 2.0f * (area1 + area2 + area3);
+}
+
+KDNode::KDNode()
+{
+	axis = 0;
+	pt = 0.0;
+	left = right = 0;
+	num_faces = 0;
 }
 
 
@@ -124,8 +154,6 @@ const Face *Scene::get_face_buffer() const
 	return facebuf;
 }
 
-static int build_kdtree(KDNode *kd);
-static void free_kdtree(KDNode *node);
 
 void Scene::build_kdtree()
 {
@@ -136,7 +164,6 @@ void Scene::build_kdtree()
 
 	free_kdtree(kdtree);
 	kdtree = new KDNode;
-	kdtree->left = kdtree->right = 0;
 
 	/* Start the construction of the kdtree by adding all faces of the scene
 	 * to the new root node. At the same time calculate the root's AABB.
@@ -163,7 +190,11 @@ void Scene::build_kdtree()
 		}
 
 		kdtree->faces.push_back(face);	// add the face
+		kdtree->num_faces++;
 	}
+
+	// calculate the heuristic for the root
+	kdtree->cost = eval_cost(kdtree->faces, kdtree->aabb, kdtree->axis);
 
 	// now proceed splitting the root recursively
 	::build_kdtree(kdtree);
@@ -171,12 +202,102 @@ void Scene::build_kdtree()
 
 static int build_kdtree(KDNode *kd)
 {
-	if(kd->faces.empty()) {
+	int opt_max_items = accel_param[ACCEL_PARAM_MAX_NODE_ITEMS];
+	if(kd->num_faces == 0 || (opt_max_items > 1 && kd->num_faces < opt_max_items)) {
 		return 0;
 	}
 
-	// XXX cont.
-	return -1;
+	int axis = (kd->axis + 1) % 3;
+
+	float best_cost[2], best_sum_cost = FLT_MAX;
+	float best_split;
+
+	std::list<const Face*>::iterator it = kd->faces.begin();
+	while(it != kd->faces.end()) {
+		const Face *face = *it++;
+
+		for(int i=0; i<3; i++) {
+			AABBox aabb_left, aabb_right;
+			const float *split = face->v[i].pos;
+
+			aabb_left = aabb_right = kd->aabb;
+			aabb_left.max[axis] = split[axis];
+			aabb_right.min[axis] = split[axis];
+
+			float left_cost = eval_cost(kd->faces, aabb_left, axis);
+			float right_cost = eval_cost(kd->faces, aabb_right, axis);
+			float sum_cost = left_cost + right_cost;
+
+			if(sum_cost < best_sum_cost) {
+				best_cost[0] = left_cost;
+				best_cost[1] = right_cost;
+				best_sum_cost = sum_cost;
+				best_split = split[axis];
+			}
+		}
+	}
+
+	if(best_sum_cost >= kd->cost) {
+		return 0;	// stop splitting if it doesn't reduce the cost
+	}
+	kd->pt = best_split;
+
+	// create the two children
+	KDNode *kdleft, *kdright;
+	kdleft = new KDNode;
+	kdright = new KDNode;
+
+	kdleft->axis = kdright->axis = axis;
+	kdleft->aabb = kdright->aabb = kd->aabb;
+
+	kdleft->aabb.max[axis] = best_split;
+	kdright->aabb.min[axis] = best_split;
+
+	kdleft->cost = best_cost[0];
+	kdright->cost = best_cost[1];
+
+	it = kd->faces.begin();
+	while(it != kd->faces.end()) {
+		const Face *face = *it++;
+
+		if(face->v[0].pos[axis] < best_split ||
+				face->v[1].pos[axis] < best_split ||
+				face->v[2].pos[axis] < best_split) {
+			kdleft->faces.push_back(face);
+			kdleft->num_faces++;
+		}
+		if(face->v[0].pos[axis] >= best_split ||
+				face->v[1].pos[axis] >= best_split ||
+				face->v[2].pos[axis] >= best_split) {
+			kdright->faces.push_back(face);
+			kdright->num_faces++;
+		}
+	}
+
+	kd->left = kdleft;
+	kd->right = kdright;
+	return 0;
+}
+
+static float eval_cost(const std::list<const Face*> &faces, const AABBox &aabb, int axis)
+{
+	int num_inside = 0;
+	int tcost = accel_param[ACCEL_PARAM_COST_TRAVERSE];
+	int icost = accel_param[ACCEL_PARAM_COST_INTERSECT];
+
+	std::list<const Face*>::const_iterator it = faces.begin();
+	while(it != faces.end()) {
+		const Face *face = *it++;
+
+		for(int i=0; i<3; i++) {
+			if(face->v[i].pos[axis] >= aabb.min[axis] && face->v[i].pos[axis] < aabb.max[axis]) {
+				num_inside++;
+				break;
+			}
+		}
+	}
+
+	return tcost + aabb.calc_surface_area() * num_inside * icost;
 }
 
 static void free_kdtree(KDNode *node)
