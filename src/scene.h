@@ -46,12 +46,6 @@ enum {
 	KDAXIS_Z
 };
 
-#define KDCLEAR(node)	((node)->axis = -1)
-#define KDUSED(node)	((node)->axis >= 0)
-#define KDPARENT(x)		((x) >> 1)
-#define KDLEFT(x)		((x) << 1)
-#define KDRIGHT(x)		(((x) << 1) + 1)
-
 struct KDNode {
 	int axis;
 	float pt;
@@ -66,8 +60,10 @@ struct KDNode {
 };
 
 struct KDNodeGPU {
-	int axis;
-	float pt;
+	AABBox aabb;
+	int face_idx[32];
+	int num_faces;
+	int padding[3];
 };
 
 
@@ -76,12 +72,13 @@ private:
 	mutable Face *facebuf;
 	mutable int num_faces;
 
+	mutable KDNodeGPU *kdbuf;
+	mutable int num_kdnodes;
+
 public:
 	std::vector<Mesh*> meshes;
 	std::vector<Material> matlib;
-
 	KDNode *kdtree;
-	std::vector<KDNode> kdtree_gpu;
 
 	Scene();
 	~Scene();
@@ -98,6 +95,8 @@ public:
 	bool load(FILE *fp);
 
 	const Face *get_face_buffer() const;
+	const KDNodeGPU *get_kdtree_buffer() const;
+	int get_num_kdnodes() const;
 
 	void draw_kdtree() const;
 	bool build_kdtree();
@@ -113,5 +112,8 @@ enum {
 };
 
 void set_accel_param(int p, int v);
+
+int kdtree_depth(const KDNode *tree);
+int kdtree_nodes(const KDNode *tree);
 
 #endif	/* MESH_H_ */

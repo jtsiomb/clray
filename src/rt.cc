@@ -16,6 +16,7 @@ enum {
 	KARG_PRIM_RAYS,
 	KARG_XFORM,
 	KARG_INVTRANS_XFORM,
+	KARG_KDTREE,
 
 	NUM_KERNEL_ARGS
 };
@@ -25,6 +26,7 @@ struct RendInfo {
 	int xsz, ysz;
 	int num_faces, num_lights;
 	int max_iter;
+	int kd_depth;
 };
 
 struct Ray {
@@ -61,6 +63,7 @@ bool init_renderer(int xsz, int ysz, Scene *scn)
 	rinf.num_faces = scn->get_num_faces();
 	rinf.num_lights = sizeof lightlist / sizeof *lightlist;
 	rinf.max_iter = 6;
+	rinf.kd_depth = kdtree_depth(scn->kdtree);
 
 	/* calculate primary rays */
 	prim_rays = new Ray[xsz * ysz];
@@ -82,6 +85,13 @@ bool init_renderer(int xsz, int ysz, Scene *scn)
 		return false;
 	}
 
+	const KDNodeGPU *kdbuf = scn->get_kdtree_buffer();
+	if(!kdbuf) {
+		fprintf(stderr, "failed to create kdtree buffer\n");
+		return false;
+	}
+	int num_kdnodes = scn->get_num_kdnodes();
+
 	/* setup argument buffers */
 	prog->set_arg_buffer(KARG_FRAMEBUFFER, ARG_WR, xsz * ysz * 4 * sizeof(float));
 	prog->set_arg_buffer(KARG_RENDER_INFO, ARG_RD, sizeof rinf, &rinf);
@@ -91,6 +101,7 @@ bool init_renderer(int xsz, int ysz, Scene *scn)
 	prog->set_arg_buffer(KARG_PRIM_RAYS, ARG_RD, xsz * ysz * sizeof *prim_rays, prim_rays);
 	prog->set_arg_buffer(KARG_XFORM, ARG_RD, 16 * sizeof(float));
 	prog->set_arg_buffer(KARG_INVTRANS_XFORM, ARG_RD, 16 * sizeof(float));
+	prog->set_arg_buffer(KARG_KDTREE, ARG_RD, num_kdnodes * sizeof *kdbuf, kdbuf);
 
 	if(prog->get_num_args() < NUM_KERNEL_ARGS) {
 		return false;

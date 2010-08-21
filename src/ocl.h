@@ -27,13 +27,13 @@ struct CLMemBuffer {
 	void *ptr;
 };
 
-CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, void *buf = 0);
+CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, const void *buf = 0);
 void destroy_mem_buffer(CLMemBuffer *mbuf);
 
 void *map_mem_buffer(CLMemBuffer *mbuf, int rdwr);
 void unmap_mem_buffer(CLMemBuffer *mbuf);
 
-bool write_mem_buffer(CLMemBuffer *mbuf, size_t sz, void *src);
+bool write_mem_buffer(CLMemBuffer *mbuf, size_t sz, const void *src);
 bool read_mem_buffer(CLMemBuffer *mbuf, size_t sz, void *dest);
 
 enum {
@@ -74,7 +74,7 @@ public:
 
 	bool set_argi(int arg, int val);
 	bool set_argf(int arg, float val);
-	bool set_arg_buffer(int arg, int rdwr, size_t sz, void *buf = 0);
+	bool set_arg_buffer(int arg, int rdwr, size_t sz, const void *buf = 0);
 	CLMemBuffer *get_arg_buffer(int arg);
 	int get_num_args() const;
 

@@ -5,6 +5,7 @@ struct RendInfo {
 	int xsz, ysz;
 	int num_faces, num_lights;
 	int max_iter;
+	int kd_depth;
 };
 
 struct Vertex {
@@ -50,6 +51,18 @@ struct Scene {
 	global const struct Light *lights;
 	int num_lights;
 	global const struct Material *matlib;
+	global const struct KDNode *kdtree;
+};
+
+struct AABBox {
+	float4 min, max;
+};
+
+struct KDNode {
+	AABBox aabb;
+	int face_idx[32];
+	int num_faces;
+	int padding[3];
 };
 
 #define MIN_ENERGY	0.001
@@ -58,6 +71,7 @@ struct Scene {
 float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp);
 bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *sp);
 bool intersect(struct Ray ray, global const struct Face *face, struct SurfPoint *sp);
+bool intersect_aabb(struct Ray ray, struct AABBox aabb);
 
 float4 reflect(float4 v, float4 n);
 float4 transform(float4 v, global const float *xform);
@@ -72,7 +86,8 @@ kernel void render(global float4 *fb,
 		global const struct Light *lights,
 		global const struct Ray *primrays,
 		global const float *xform,
-		global const float *invtrans)
+		global const float *invtrans,
+		global const struct KDNode *kdtree)
 {
 	int idx = get_global_id(0);
 
@@ -146,8 +161,12 @@ float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
 	return dcol + scol;
 }
 
-
 bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *spres)
+{
+	return false;
+}
+
+/*bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *spres)
 {
 	struct SurfPoint sp, sp0;
 	sp0.t = 1.0;
@@ -168,7 +187,7 @@ bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint
 		spres->mat = scn->matlib[sp0.obj->matid];
 	}
 	return true;
-}
+}*/
 
 bool intersect(struct Ray ray, global const struct Face *face, struct SurfPoint *sp)
 {
@@ -208,6 +227,44 @@ bool intersect(struct Ray ray, global const struct Face *face, struct SurfPoint 
 	sp->obj = face;
 	sp->dbg = bc;
 	return true;
+}
+
+bool intersect_aabb(struct Ray ray, struct AABBox aabb)
+{
+	if(ray.origin.x >= aabb.min.x && ray.origin.y >= aabb.min.y && ray.origin.z >= aabb.min.z &&
+			ray.origin.x < aabb.max.x && ray.origin.y < aabb.max.y && ray.origin.z < aabb.max.z) {
+		return true;
+	}
+
+	float4 bbox[2] = {aabb.min, aabb.max};
+
+	int xsign = (int)(ray.dir.x < 0.0);
+	float invdirx = 1.0 / ray.dir.x;
+	float tmin = (bbox[xsign].x - ray.origin.x) * invdirx;
+	float tmax = (bbox[1 - xsign].x - ray.origin.x) * invdirx;
+
+	int ysign = (int)(ray.dir.y < 0.0);
+	float invdiry = 1.0 / ray.dir.y;
+	float tymin = (bbox[ysign].y - ray.origin.y) * invdiry;
+	float tymax = (bbox[1 - ysign].y - ray.origin.y) * invdiry;
+
+	if(tmin > tymax || tymin > tmax) {
+		return false;
+	}
+
+	if(tymin > tmin) tmin = tymin;
+	if(tymax < tmax) tmax = tymax;
+
+	int zsign = (int)(ray.dir.z < 0.0);
+	float invdirz = 1.0 / ray.dir.z;
+	float tzmin = (bbox[zsign].z - ray.origin.z) * invdirz;
+	float tzmax = (bbox[1 - zsign].z - ray.origin.z) * invdirz;
+
+	if(tmin > tzmax || tzmin > tmax) {
+		return false;
+	}
+
+	return tmin < t1 && tmax > t0;
 }
 
 float4 reflect(float4 v, float4 n)

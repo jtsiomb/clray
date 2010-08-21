@@ -9,12 +9,12 @@ static void draw_kdtree(const KDNode *node, int level = 0);
 static bool build_kdtree(KDNode *kd, int level = 0);
 static float eval_cost(const std::list<const Face*> &faces, const AABBox &aabb, int axis, float par_sarea = 1.0);
 static void free_kdtree(KDNode *node);
-static int kdtree_depth(const KDNode *node);
+static void kdtree_gpu_flatten(KDNodeGPU *kdbuf, int idx, const KDNode *node, const Face *facebuf);
 static void print_item_counts(const KDNode *node, int level);
 
 
 static int accel_param[NUM_ACCEL_PARAMS] = {
-	75,	// max tree depth
+	40,	// max tree depth
 	0,	// max items per node (0 means ignore limit)
 	5,	// estimated traversal cost
 	15	// estimated interseciton cost
@@ -70,11 +70,15 @@ Scene::Scene()
 	facebuf = 0;
 	num_faces = -1;
 	kdtree = 0;
+	num_kdnodes = -1;
+	kdbuf = 0;
 }
 
 Scene::~Scene()
 {
 	delete [] facebuf;
+	delete [] kdbuf;
+	free_kdtree(kdtree);
 }
 
 bool Scene::add_mesh(Mesh *m)
@@ -158,6 +162,35 @@ const Face *Scene::get_face_buffer() const
 	return facebuf;
 }
 
+const KDNodeGPU *Scene::get_kdtree_buffer() const
+{
+	if(kdbuf) {
+		return kdbuf;
+	}
+
+	if(!kdtree) {
+		((Scene*)this)->build_kdtree();
+	}
+
+	if(!get_num_kdnodes()) {
+		return 0;
+	}
+
+	kdbuf = new KDNodeGPU[num_kdnodes + 1];
+	kdtree_gpu_flatten(kdbuf, 1, kdtree, get_face_buffer());
+	return kdbuf;
+}
+
+int Scene::get_num_kdnodes() const
+{
+	if(num_kdnodes >= 0) {
+		return num_kdnodes;
+	}
+
+	num_kdnodes = kdtree_nodes(kdtree);
+	return num_kdnodes;
+}
+
 
 void Scene::draw_kdtree() const
 {
@@ -175,22 +208,10 @@ void Scene::draw_kdtree() const
 
 static float palette[][3] = {
 	{0, 1, 0},
-	{0, 1, 0},
-	{0, 1, 0},
-	{1, 0, 0},
-	{1, 0, 0},
 	{1, 0, 0},
 	{0, 0, 1},
-	{0, 0, 1},
-	{0, 0, 1},
-	{1, 1, 0},
-	{1, 1, 0},
 	{1, 1, 0},
 	{0, 0, 1},
-	{0, 0, 1},
-	{0, 0, 1},
-	{1, 0, 1},
-	{1, 0, 1},
 	{1, 0, 1}
 };
 static int pal_size = sizeof palette / sizeof *palette;
@@ -291,10 +312,11 @@ bool Scene::build_kdtree()
 
 static bool build_kdtree(KDNode *kd, int level)
 {
+	int opt_max_depth = accel_param[ACCEL_PARAM_MAX_TREE_DEPTH];
 	int opt_max_items = accel_param[ACCEL_PARAM_MAX_NODE_ITEMS];
 	int tcost = accel_param[ACCEL_PARAM_COST_TRAVERSE];
 
-	if(kd->num_faces == 0) {
+	if(kd->num_faces == 0 || level >= opt_max_depth) {
 		return true;
 	}
 
@@ -410,13 +432,43 @@ static void free_kdtree(KDNode *node)
 	}
 }
 
-static int kdtree_depth(const KDNode *node)
+int kdtree_depth(const KDNode *node)
 {
 	if(!node) return 0;
 
 	int left = kdtree_depth(node->left);
 	int right = kdtree_depth(node->right);
 	return (left > right ? left : right) + 1;
+}
+
+int kdtree_nodes(const KDNode *node)
+{
+	if(!node) return 0;
+	return kdtree_nodes(node->left) + kdtree_nodes(node->right) + 1;
+}
+
+#define MAX_FACES	(sizeof dest->face_idx / sizeof *dest->face_idx)
+static void kdtree_gpu_flatten(KDNodeGPU *kdbuf, int idx, const KDNode *node, const Face *facebuf)
+{
+	KDNodeGPU *dest = kdbuf + idx;
+
+	dest->aabb = node->aabb;
+	dest->num_faces = 0;
+
+	std::list<const Face*>::const_iterator it = node->faces.begin();
+	while(it != node->faces.end()) {
+		if(dest->num_faces >= (int)MAX_FACES) {
+			fprintf(stderr, "kdtree_gpu_flatten WARNING: more than %d faces in node, skipping!\n", (int)MAX_FACES);
+			break;
+		}
+		dest->face_idx[dest->num_faces++] = *it - facebuf;
+	}
+
+	if(node->left) {
+		assert(node->right);
+		kdtree_gpu_flatten(kdbuf, idx * 2, node->left, facebuf);
+		kdtree_gpu_flatten(kdbuf, idx * 2 + 1, node->right, facebuf);
+	}
 }
 
 static void print_item_counts(const KDNode *node, int level)

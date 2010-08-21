@@ -74,7 +74,7 @@ static bool init_opencl(void)
 }
 
 
-CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, void *buf)
+CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, const void *buf)
 {
 	int err;
 	cl_mem mem;
@@ -85,7 +85,7 @@ CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, void *buf)
 	}
 
 
-	if(!(mem = clCreateBuffer(ctx, flags, sz, buf, &err))) {
+	if(!(mem = clCreateBuffer(ctx, flags, sz, (void*)buf, &err))) {
 		fprintf(stderr, "failed to create memory buffer: %s\n", clstrerror(err));
 		return 0;
 	}
@@ -131,7 +131,7 @@ void unmap_mem_buffer(CLMemBuffer *mbuf)
 	mbuf->ptr = 0;
 }
 
-bool write_mem_buffer(CLMemBuffer *mbuf, size_t sz, void *src)
+bool write_mem_buffer(CLMemBuffer *mbuf, size_t sz, const void *src)
 {
 	if(!mbuf) return false;
 
@@ -243,7 +243,7 @@ bool CLProgram::set_argf(int idx, float val)
 	return true;
 }
 
-bool CLProgram::set_arg_buffer(int idx, int rdwr, size_t sz, void *ptr)
+bool CLProgram::set_arg_buffer(int idx, int rdwr, size_t sz, const void *ptr)
 {
 	printf("create argument %d buffer: %d bytes\n", idx, (int)sz);
 	CLMemBuffer *buf;
