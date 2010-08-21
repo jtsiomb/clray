@@ -170,34 +170,40 @@ bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint
 	sp0.obj = 0;
 
 	int idxstack[STACK_SIZE];
-	int sp = 0;			// points at the topmost element of the stack
-	idxstack[sp] = 1;	// root at tree[1] (heap)
+	int top = 0;			// points after the topmost element of the stack
+	idxstack[top++] = 1;	// root at tree[1] (heap)
 
-	printf("check intersection\n");
+	while(top > 0) {
+		int idx = idxstack[--top];	// remove this index from the stack and process it
 
-	while(sp >= 0) {
-		int idx = idxstack[sp--];	// remove this index from the stack and process it
+		global const struct KDNode *node = scn->kdtree + idx;
 
-		global struct KDNode *node = scn->kdtree + idx;
-		printf("idx: %d (%p) num_faces: %d\n", idx, node, node->num_faces);
+		/*if(get_global_id(0) == 0) {
+			for(int i=0; i<top+1; i++) {
+				printf("   ");
+			}
+			printf("(%d) idx: %d (%p) num_faces: %d\n", top+1, idx, node, node->num_faces);
+		}*/
 
 		if(intersect_aabb(ray, node->aabb)) {
-			// leaf node ...
 			if(node->num_faces >= 0) {
-				// check each face in turn and update the nearest intersection as needed
+				// leaf node... check each face in turn and update the nearest intersection as needed
 				for(int i=0; i<node->num_faces; i++) {
-					struct SurfPoint sp;
+					struct SurfPoint spt;
 					int fidx = node->face_idx[i];
 
-					if(intersect(ray, scn->faces + fidx, &sp) && sp.t < sp0.t) {
-						sp0 = sp;
+					if(intersect(ray, scn->faces + fidx, &spt) && spt.t < sp0.t) {
+						sp0 = spt;
 					}
 				}
+			} else {
+				// internal node... recurse to the children
+				/*if(get_global_id(0) == 0) {
+					printf("pushing %d's children %d and %d\n", idx, idx * 2, idx * 2 + 1);
+				}*/
+				idxstack[top++] = idx * 2;
+				idxstack[top++] = idx * 2 + 1;
 			}
-		} else {
-			// internal node ... recurse to the children
-			idxstack[++sp] = idx * 2;
-			idxstack[++sp] = idx * 2 + 1;
 		}
 	}
 

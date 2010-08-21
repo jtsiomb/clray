@@ -472,10 +472,12 @@ static void kdtree_gpu_flatten(KDNodeGPU *kdbuf, int idx, const KDNode *node, co
 
 	if(node->left) {
 		assert(node->right);
+		assert(!dest->num_faces);
+
+		dest->num_faces = -1;
+
 		kdtree_gpu_flatten(kdbuf, idx * 2, node->left, facebuf);
 		kdtree_gpu_flatten(kdbuf, idx * 2 + 1, node->right, facebuf);
-	} else {
-		dest->num_faces = -1;
 	}
 }
 
