@@ -70,7 +70,6 @@ Scene::Scene()
 	facebuf = 0;
 	num_faces = -1;
 	kdtree = 0;
-	num_kdnodes = -1;
 	kdbuf = 0;
 }
 
@@ -172,25 +171,30 @@ const KDNodeGPU *Scene::get_kdtree_buffer() const
 		((Scene*)this)->build_kdtree();
 	}
 
-	if(!get_num_kdnodes()) {
-		return 0;
-	}
+	int max_nodes = (int)pow(2, kdtree_depth(kdtree)) - 1;
+	printf("allocating storage for the complete tree (%d)\n", max_nodes);
 
-	kdbuf = new KDNodeGPU[num_kdnodes + 1];
+	kdbuf = new KDNodeGPU[max_nodes + 1];
 	kdtree_gpu_flatten(kdbuf, 1, kdtree, get_face_buffer());
 	return kdbuf;
 }
 
-int Scene::get_num_kdnodes() const
+static int ipow(int x, int n)
 {
-	if(num_kdnodes >= 0) {
-		return num_kdnodes;
-	}
+	assert(n >= 0);
 
-	num_kdnodes = kdtree_nodes(kdtree);
-	return num_kdnodes;
+	int res = 1;
+	for(int i=0; i<n; i++) {
+		res *= x;
+	}
+	return res;
 }
 
+int Scene::get_kdtree_buffer_size() const
+{
+	// 2**depth - 1 nodes for the complete tree + 1 for the unused heap item 0.
+	return ipow(2, kdtree_depth(kdtree)) * sizeof(KDNodeGPU);
+}
 
 void Scene::draw_kdtree() const
 {
@@ -255,6 +259,8 @@ static void draw_kdtree(const KDNode *node, int level)
 
 bool Scene::build_kdtree()
 {
+	assert(kdtree == 0);
+
 	const Face *faces = get_face_buffer();
 	int num_faces = get_num_faces();
 
@@ -351,7 +357,7 @@ static bool build_kdtree(KDNode *kd, int level)
 		}
 	}
 
-	printf("current cost: %f,   best_cost: %f\n", kd->cost, best_sum_cost);
+	//printf("current cost: %f,   best_cost: %f\n", kd->cost, best_sum_cost);
 	if(best_sum_cost > kd->cost && (opt_max_items == 0 || kd->num_faces <= opt_max_items)) {
 		return true;	// stop splitting if it doesn't reduce the cost
 	}
@@ -461,7 +467,7 @@ static void kdtree_gpu_flatten(KDNodeGPU *kdbuf, int idx, const KDNode *node, co
 			fprintf(stderr, "kdtree_gpu_flatten WARNING: more than %d faces in node, skipping!\n", (int)MAX_FACES);
 			break;
 		}
-		dest->face_idx[dest->num_faces++] = *it - facebuf;
+		dest->face_idx[dest->num_faces++] = *it++ - facebuf;
 	}
 
 	if(node->left) {
@@ -475,10 +481,10 @@ static void print_item_counts(const KDNode *node, int level)
 {
 	if(!node) return;
 
-	for(int i=0; i<level; i++) {
+	/*for(int i=0; i<level; i++) {
 		fputs("   ", stdout);
 	}
-	printf("- %d (cost: %f)\n", node->num_faces, node->cost);
+	printf("- %d (cost: %f)\n", node->num_faces, node->cost);*/
 
 	print_item_counts(node->left, level + 1);
 	print_item_counts(node->right, level + 1);

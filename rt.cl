@@ -59,7 +59,7 @@ struct AABBox {
 };
 
 struct KDNode {
-	AABBox aabb;
+	struct AABBox aabb;
 	int face_idx[32];
 	int num_faces;
 	int padding[3];
@@ -161,9 +161,51 @@ float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
 	return dcol + scol;
 }
 
+#define STACK_SIZE	128
 bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *spres)
 {
-	return false;
+	struct SurfPoint sp0;
+	sp0.t = 1.0;
+	sp0.obj = 0;
+
+	int idxstack[STACK_SIZE];
+	int sp = 0;			// points at the topmost element of the stack
+	idxstack[sp] = 1;	// root at tree[1] (heap)
+
+	while(sp >= 0) {
+		int idx = idxstack[sp--];	// remove this index from the stack and process it
+
+		global struct KDNode *node = scn->kdtree + idx;
+
+		if(intersect_aabb(ray, node->aabb)) {
+			// leaf node ...
+			if(node->num_faces) {
+				// check each face in turn and update the nearest intersection as needed
+				for(int i=0; i<node->num_faces; i++) {
+					struct SurfPoint sp;
+					int fidx = node->face_idx[i];
+
+					if(intersect(ray, scn->faces + fidx, &sp) && sp.t < sp0.t) {
+						sp0 = sp;
+					}
+				}
+			}
+		} else {
+			// internal node ... recurse to the children
+			idxstack[++sp] = idx * 2;
+			idxstack[++sp] = idx * 2 + 1;
+		}
+	}
+
+	if(!sp0.obj) {
+		return false;
+	}
+
+	if(spres) {
+		*spres = sp0;
+		spres->mat = scn->matlib[sp0.obj->matid];
+	}
+	return true;
 }
 
 /*bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *spres)
@@ -236,7 +278,10 @@ bool intersect_aabb(struct Ray ray, struct AABBox aabb)
 		return true;
 	}
 
-	float4 bbox[2] = {aabb.min, aabb.max};
+	float4 bbox[2] = {
+		aabb.min.x, aabb.min.y, aabb.min.z, 0,
+		aabb.max.x, aabb.max.y, aabb.max.z, 0
+	};
 
 	int xsign = (int)(ray.dir.x < 0.0);
 	float invdirx = 1.0 / ray.dir.x;
@@ -264,7 +309,7 @@ bool intersect_aabb(struct Ray ray, struct AABBox aabb)
 		return false;
 	}
 
-	return tmin < t1 && tmax > t0;
+	return tmin < 1.0 && tmax > 0.0;
 }
 
 float4 reflect(float4 v, float4 n)

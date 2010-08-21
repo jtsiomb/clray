@@ -107,10 +107,6 @@ int main(int argc, char **argv)
 	}
 	atexit(cleanup);
 
-	if(!scn.build_kdtree()) {
-		return 1;
-	}
-
 
 	/*glGenTextures(1, &tex);
 	glBindTexture(GL_TEXTURE_2D, tex);*/

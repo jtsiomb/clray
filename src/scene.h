@@ -73,7 +73,6 @@ private:
 	mutable int num_faces;
 
 	mutable KDNodeGPU *kdbuf;
-	mutable int num_kdnodes;
 
 public:
 	std::vector<Mesh*> meshes;
@@ -96,7 +95,7 @@ public:
 
 	const Face *get_face_buffer() const;
 	const KDNodeGPU *get_kdtree_buffer() const;
-	int get_num_kdnodes() const;
+	int get_kdtree_buffer_size() const;
 
 	void draw_kdtree() const;
 	bool build_kdtree();
