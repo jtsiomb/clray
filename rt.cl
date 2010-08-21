@@ -98,6 +98,7 @@ kernel void render(global float4 *fb,
 	scn.lights = lights;
 	scn.num_lights = rinf->num_lights;
 	scn.matlib = matlib;
+	scn.kdtree = kdtree;
 
 	struct Ray ray = primrays[idx];
 	transform_ray(&ray, xform, invtrans);
@@ -161,7 +162,7 @@ float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
 	return dcol + scol;
 }
 
-#define STACK_SIZE	128
+#define STACK_SIZE	64
 bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *spres)
 {
 	struct SurfPoint sp0;
@@ -172,14 +173,17 @@ bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint
 	int sp = 0;			// points at the topmost element of the stack
 	idxstack[sp] = 1;	// root at tree[1] (heap)
 
+	printf("check intersection\n");
+
 	while(sp >= 0) {
 		int idx = idxstack[sp--];	// remove this index from the stack and process it
 
 		global struct KDNode *node = scn->kdtree + idx;
+		printf("idx: %d (%p) num_faces: %d\n", idx, node, node->num_faces);
 
 		if(intersect_aabb(ray, node->aabb)) {
 			// leaf node ...
-			if(node->num_faces) {
+			if(node->num_faces >= 0) {
 				// check each face in turn and update the nearest intersection as needed
 				for(int i=0; i<node->num_faces; i++) {
 					struct SurfPoint sp;

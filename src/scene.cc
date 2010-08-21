@@ -474,6 +474,8 @@ static void kdtree_gpu_flatten(KDNodeGPU *kdbuf, int idx, const KDNode *node, co
 		assert(node->right);
 		kdtree_gpu_flatten(kdbuf, idx * 2, node->left, facebuf);
 		kdtree_gpu_flatten(kdbuf, idx * 2 + 1, node->right, facebuf);
+	} else {
+		dest->num_faces = -1;
 	}
 }
 
@@ -481,10 +483,10 @@ static void print_item_counts(const KDNode *node, int level)
 {
 	if(!node) return;
 
-	/*for(int i=0; i<level; i++) {
+	for(int i=0; i<level; i++) {
 		fputs("   ", stdout);
 	}
-	printf("- %d (cost: %f)\n", node->num_faces, node->cost);*/
+	printf("- %d (cost: %f)\n", node->num_faces, node->cost);
 
 	print_item_counts(node->left, level + 1);
 	print_item_counts(node->right, level + 1);
