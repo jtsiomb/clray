@@ -6,10 +6,10 @@
 
 
 static void draw_kdtree(const KDNode *node, int level = 0);
-static bool build_kdtree(KDNode *kd, int level = 0);
-static float eval_cost(const std::list<const Face*> &faces, const AABBox &aabb, int axis, float par_sarea = 1.0);
+static bool build_kdtree(KDNode *kd, const Face *faces, int level = 0);
+static float eval_cost(const Face *faces, const int *face_idx, int num_faces, const AABBox &aabb, int axis);
 static void free_kdtree(KDNode *node);
-static void kdtree_gpu_flatten(KDNodeGPU *kdbuf, int idx, const KDNode *node, const Face *facebuf);
+static void kdtree_gpu_flatten(KDNodeGPU *kdbuf, int idx, const KDNode *node);
 static void print_item_counts(const KDNode *node, int level);
 
 
@@ -58,10 +58,8 @@ float AABBox::calc_surface_area() const
 
 KDNode::KDNode()
 {
-	axis = 0;
-	pt = 0.0;
 	left = right = 0;
-	num_faces = 0;
+	cost = 0.0;
 }
 
 
@@ -175,7 +173,7 @@ const KDNodeGPU *Scene::get_kdtree_buffer() const
 	printf("allocating storage for the complete tree (%d)\n", max_nodes);
 
 	kdbuf = new KDNodeGPU[max_nodes + 1];
-	kdtree_gpu_flatten(kdbuf, 1, kdtree, get_face_buffer());
+	kdtree_gpu_flatten(kdbuf, 1, kdtree);
 	return kdbuf;
 }
 
@@ -298,15 +296,14 @@ bool Scene::build_kdtree()
 			}
 		}
 
-		kdtree->faces.push_back(face);	// add the face
-		kdtree->num_faces++;
+		kdtree->face_idx.push_back(i);	// add the face
 	}
 
 	// calculate the heuristic for the root
-	kdtree->cost = eval_cost(kdtree->faces, kdtree->aabb, kdtree->axis);
+	kdtree->cost = eval_cost(faces, &kdtree->face_idx[0], kdtree->face_idx.size(), kdtree->aabb, 0);
 
 	// now proceed splitting the root recursively
-	if(!::build_kdtree(kdtree)) {
+	if(!::build_kdtree(kdtree, faces)) {
 		fprintf(stderr, "failed to build kdtree\n");
 		return false;
 	}
@@ -316,36 +313,34 @@ bool Scene::build_kdtree()
 	return true;
 }
 
-static bool build_kdtree(KDNode *kd, int level)
+static bool build_kdtree(KDNode *kd, const Face *faces, int level)
 {
 	int opt_max_depth = accel_param[ACCEL_PARAM_MAX_TREE_DEPTH];
 	int opt_max_items = accel_param[ACCEL_PARAM_MAX_NODE_ITEMS];
 	int tcost = accel_param[ACCEL_PARAM_COST_TRAVERSE];
 
-	if(kd->num_faces == 0 || level >= opt_max_depth) {
+	if(kd->face_idx.empty() || level >= opt_max_depth) {
 		return true;
 	}
 
 	int axis = level % 3;
-	//float parent_sa = kd->aabb.calc_surface_area();
 
 	float best_cost[2], best_sum_cost = FLT_MAX;
 	float best_split;
 
-	std::list<const Face*>::iterator it = kd->faces.begin();
-	while(it != kd->faces.end()) {
-		const Face *face = *it++;
+	for(size_t i=0; i<kd->face_idx.size(); i++) {
+		const Face *face = faces + kd->face_idx[i];
 
-		for(int i=0; i<3; i++) {
+		for(int j=0; j<3; j++) {
 			AABBox aabb_left, aabb_right;
-			const float *split = face->v[i].pos;
+			const float *split = face->v[j].pos;
 
 			aabb_left = aabb_right = kd->aabb;
 			aabb_left.max[axis] = split[axis];
 			aabb_right.min[axis] = split[axis];
 
-			float left_cost = eval_cost(kd->faces, aabb_left, axis);
-			float right_cost = eval_cost(kd->faces, aabb_right, axis);
+			float left_cost = eval_cost(faces, &kd->face_idx[0], kd->face_idx.size(), aabb_left, axis);
+			float right_cost = eval_cost(faces, &kd->face_idx[0], kd->face_idx.size(), aabb_right, axis);
 			float sum_cost = left_cost + right_cost - tcost;	// tcost is added twice
 
 			if(sum_cost < best_sum_cost) {
@@ -358,10 +353,9 @@ static bool build_kdtree(KDNode *kd, int level)
 	}
 
 	//printf("current cost: %f,   best_cost: %f\n", kd->cost, best_sum_cost);
-	if(best_sum_cost > kd->cost && (opt_max_items == 0 || kd->num_faces <= opt_max_items)) {
+	if(best_sum_cost > kd->cost && (opt_max_items == 0 || (int)kd->face_idx.size() <= opt_max_items)) {
 		return true;	// stop splitting if it doesn't reduce the cost
 	}
-	kd->pt = best_split;
 
 	// create the two children
 	KDNode *kdleft, *kdright;
@@ -376,45 +370,40 @@ static bool build_kdtree(KDNode *kd, int level)
 	kdleft->cost = best_cost[0];
 	kdright->cost = best_cost[1];
 
-	//kdleft->axis = kdright->axis = (axis + 1) % 3;
-
-	it = kd->faces.begin();
-	while(it != kd->faces.end()) {
-		const Face *face = *it++;
+	for(size_t i=0; i<kd->face_idx.size(); i++) {
+		int fidx = kd->face_idx[i];
+		const Face *face = faces + fidx;
 
 		if(face->v[0].pos[axis] < best_split ||
 				face->v[1].pos[axis] < best_split ||
 				face->v[2].pos[axis] < best_split) {
-			kdleft->faces.push_back(face);
-			kdleft->num_faces++;
+			kdleft->face_idx.push_back(fidx);
 		}
 		if(face->v[0].pos[axis] >= best_split ||
 				face->v[1].pos[axis] >= best_split ||
 				face->v[2].pos[axis] >= best_split) {
-			kdright->faces.push_back(face);
-			kdright->num_faces++;
+			kdright->face_idx.push_back(fidx);
 		}
 	}
-	kd->faces.clear();	// only leaves have faces
+	kd->face_idx.clear();	// only leaves have faces
 
 	kd->left = kdleft;
 	kd->right = kdright;
 
-	return build_kdtree(kd->left, level + 1) && build_kdtree(kd->right, level + 1);
+	return build_kdtree(kd->left, faces, level + 1) && build_kdtree(kd->right, faces, level + 1);
 }
 
-static float eval_cost(const std::list<const Face*> &faces, const AABBox &aabb, int axis, float par_sarea)
+static float eval_cost(const Face *faces, const int *face_idx, int num_faces, const AABBox &aabb, int axis)
 {
 	int num_inside = 0;
 	int tcost = accel_param[ACCEL_PARAM_COST_TRAVERSE];
 	int icost = accel_param[ACCEL_PARAM_COST_INTERSECT];
 
-	std::list<const Face*>::const_iterator it = faces.begin();
-	while(it != faces.end()) {
-		const Face *face = *it++;
+	for(int i=0; i<num_faces; i++) {
+		const Face *face = faces + face_idx[i];
 
-		for(int i=0; i<3; i++) {
-			if(face->v[i].pos[axis] >= aabb.min[axis] && face->v[i].pos[axis] < aabb.max[axis]) {
+		for(int j=0; j<3; j++) {
+			if(face->v[j].pos[axis] >= aabb.min[axis] && face->v[j].pos[axis] < aabb.max[axis]) {
 				num_inside++;
 				break;
 			}
@@ -426,7 +415,7 @@ static float eval_cost(const std::list<const Face*> &faces, const AABBox &aabb, 
 		return FLT_MAX;	// heavily penalize 0-area voxels
 	}
 
-	return tcost + (sarea / par_sarea) * num_inside * icost;
+	return tcost + sarea * num_inside * icost;
 }
 
 static void free_kdtree(KDNode *node)
@@ -454,20 +443,19 @@ int kdtree_nodes(const KDNode *node)
 }
 
 #define MAX_FACES	(sizeof dest->face_idx / sizeof *dest->face_idx)
-static void kdtree_gpu_flatten(KDNodeGPU *kdbuf, int idx, const KDNode *node, const Face *facebuf)
+static void kdtree_gpu_flatten(KDNodeGPU *kdbuf, int idx, const KDNode *node)
 {
 	KDNodeGPU *dest = kdbuf + idx;
 
 	dest->aabb = node->aabb;
 	dest->num_faces = 0;
 
-	std::list<const Face*>::const_iterator it = node->faces.begin();
-	while(it != node->faces.end()) {
+	for(size_t i=0; i<node->face_idx.size(); i++) {
 		if(dest->num_faces >= (int)MAX_FACES) {
 			fprintf(stderr, "kdtree_gpu_flatten WARNING: more than %d faces in node, skipping!\n", (int)MAX_FACES);
 			break;
 		}
-		dest->face_idx[dest->num_faces++] = *it++ - facebuf;
+		dest->face_idx[dest->num_faces++] = node->face_idx[i];
 	}
 
 	if(node->left) {
@@ -476,8 +464,8 @@ static void kdtree_gpu_flatten(KDNodeGPU *kdbuf, int idx, const KDNode *node, co
 
 		dest->num_faces = -1;
 
-		kdtree_gpu_flatten(kdbuf, idx * 2, node->left, facebuf);
-		kdtree_gpu_flatten(kdbuf, idx * 2 + 1, node->right, facebuf);
+		kdtree_gpu_flatten(kdbuf, idx * 2, node->left);
+		kdtree_gpu_flatten(kdbuf, idx * 2 + 1, node->right);
 	}
 }
 
@@ -488,7 +476,7 @@ static void print_item_counts(const KDNode *node, int level)
 	for(int i=0; i<level; i++) {
 		fputs("   ", stdout);
 	}
-	printf("- %d (cost: %f)\n", node->num_faces, node->cost);
+	printf("- %d (cost: %f)\n", (int)node->face_idx.size(), node->cost);
 
 	print_item_counts(node->left, level + 1);
 	print_item_counts(node->right, level + 1);

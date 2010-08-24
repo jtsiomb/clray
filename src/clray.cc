@@ -26,7 +26,7 @@ static bool need_update = true;
 static float cam_theta, cam_phi = 25.0;
 static float cam_dist = 10.0;
 
-static bool dbg_glrender = true;
+static bool dbg_glrender = false;
 static bool dbg_show_kdtree = false;
 static bool dbg_show_obj = true;
 
@@ -107,6 +107,12 @@ int main(int argc, char **argv)
 	}
 	atexit(cleanup);
 
+	unsigned int *test_pattern = new unsigned int[xsz * ysz];
+	for(int i=0; i<ysz; i++) {
+		for(int j=0; j<xsz; j++) {
+			test_pattern[i * xsz + j] = ((i >> 4) & 1) == ((j >> 4) & 1) ? 0xff0000 : 0xff00;
+		}
+	}
 
 	/*glGenTextures(1, &tex);
 	glBindTexture(GL_TEXTURE_2D, tex);*/
@@ -114,7 +120,8 @@ int main(int argc, char **argv)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexImage2D(GL_TEXTURE_2D, 0, 4, xsz, ysz, 0, GL_RGBA, GL_FLOAT, 0);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, xsz, ysz, 0, GL_RGBA, GL_UNSIGNED_BYTE, test_pattern);
+	delete [] test_pattern;
 
 	glutMainLoop();
 	return 0;

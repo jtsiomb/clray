@@ -5,6 +5,7 @@
 #include "ogl.h"
 #include "ocl.h"
 #include "scene.h"
+#include "timer.h"
 
 // kernel arguments
 enum {
@@ -90,6 +91,7 @@ bool init_renderer(int xsz, int ysz, Scene *scn)
 		fprintf(stderr, "failed to create kdtree buffer\n");
 		return false;
 	}
+	// XXX now we can actually destroy the original kdtree and keep only the GPU version
 
 	/* setup argument buffers */
 	prog->set_arg_buffer(KARG_FRAMEBUFFER, ARG_WR, xsz * ysz * 4 * sizeof(float));
@@ -123,9 +125,13 @@ void destroy_renderer()
 
 bool render()
 {
+	long tm0 = get_msec();
+
 	if(!prog->run(1, global_size)) {
 		return false;
 	}
+
+	long tm_run = get_msec() - tm0;
 
 	CLMemBuffer *mbuf = prog->get_arg_buffer(KARG_FRAMEBUFFER);
 	void *fb = map_mem_buffer(mbuf, MAP_RD);
@@ -134,14 +140,12 @@ bool render()
 		return false;
 	}
 
-	static int foo = 0;
-	if(!foo++) {
-		bool write_ppm(const char *fname, float *fb, int xsz, int ysz);
-		write_ppm("foo.ppm", (float*)fb, rinf.xsz, rinf.ysz);
-	}
-
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rinf.xsz, rinf.ysz, GL_RGBA, GL_FLOAT, fb);
 	unmap_mem_buffer(mbuf);
+
+	long tm_upd = get_msec() - tm0 - tm_run;
+
+	printf("render %ld msec (%ld run, %ld upd)\n", tm_run + tm_upd, tm_run, tm_upd);
 	return true;
 }
 

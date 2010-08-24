@@ -377,10 +377,15 @@ bool CLProgram::run(int dim, ...) const
 	va_end(ap);
 
 	int err;
-	if((err = clEnqueueNDRangeKernel(cmdq, kernel, dim, 0, global_size, 0, 0, 0, 0)) != 0) {
+	cl_event event;
+
+	if((err = clEnqueueNDRangeKernel(cmdq, kernel, dim, 0, global_size, 0, 0, 0, &event)) != 0) {
 		fprintf(stderr, "error executing kernel: %s\n", clstrerror(err));
 		return false;
 	}
+
+	clWaitForEvents(1, &event);
+	clReleaseEvent(event);
 	return true;
 }
 

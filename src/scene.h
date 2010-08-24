@@ -40,21 +40,12 @@ public:
 	float calc_surface_area() const;
 };
 
-enum {
-	KDAXIS_X,
-	KDAXIS_Y,
-	KDAXIS_Z
-};
-
 struct KDNode {
-	int axis;
-	float pt;
 	AABBox aabb;
 	float cost;
 
 	KDNode *left, *right;
-	int num_faces;	// cause on some implementations list::size() is O(n)
-	std::list<const Face*> faces;
+	std::vector<int> face_idx;
 
 	KDNode();
 };
@@ -114,5 +105,8 @@ void set_accel_param(int p, int v);
 
 int kdtree_depth(const KDNode *tree);
 int kdtree_nodes(const KDNode *tree);
+
+bool kdtree_dump(const KDNode *tree, const char *fname);
+KDNode *kdtree_restore(const char *fname);
 
 #endif	/* MESH_H_ */
