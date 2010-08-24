@@ -120,7 +120,7 @@ int main(int argc, char **argv)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, xsz, ysz, 0, GL_RGBA, GL_UNSIGNED_BYTE, test_pattern);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F_ARB, xsz, ysz, 0, GL_RGBA, GL_UNSIGNED_BYTE, test_pattern);
 	delete [] test_pattern;
 
 	glutMainLoop();
