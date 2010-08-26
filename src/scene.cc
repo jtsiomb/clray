@@ -325,6 +325,48 @@ static void draw_kdtree(const KDNode *node, int level)
 	glVertex3fv(node->aabb.max);
 	glVertex3f(node->aabb.min[0], node->aabb.max[1], node->aabb.min[2]);
 	glVertex3f(node->aabb.min[0], node->aabb.max[1], node->aabb.max[2]);
+	/*if(!node->left) return;
+
+	AABBox *bleft = &node->left->aabb;
+
+	int axis = level % 3;
+	switch(axis) {
+	case 0:
+		glVertex3f(bleft->max[0], bleft->min[1], bleft->min[2]);
+		glVertex3f(bleft->max[0], bleft->max[1], bleft->min[2]);
+		glVertex3f(bleft->max[0], bleft->max[1], bleft->min[2]);
+		glVertex3f(bleft->max[0], bleft->max[1], bleft->max[2]);
+		glVertex3f(bleft->max[0], bleft->max[1], bleft->max[2]);
+		glVertex3f(bleft->max[0], bleft->min[1], bleft->max[2]);
+		glVertex3f(bleft->max[0], bleft->min[1], bleft->max[2]);
+		glVertex3f(bleft->max[0], bleft->min[1], bleft->min[2]);
+		break;
+	
+	case 1:
+		glVertex3f(bleft->min[0], bleft->min[1], bleft->max[2]);
+		glVertex3f(bleft->min[0], bleft->max[1], bleft->max[2]);
+		glVertex3f(bleft->min[0], bleft->max[1], bleft->max[2]);
+		glVertex3f(bleft->max[0], bleft->max[1], bleft->max[2]);
+		glVertex3f(bleft->max[0], bleft->max[1], bleft->max[2]);
+		glVertex3f(bleft->max[0], bleft->min[1], bleft->max[2]);
+		glVertex3f(bleft->max[0], bleft->min[1], bleft->max[2]);
+		glVertex3f(bleft->min[0], bleft->min[1], bleft->max[2]);
+		break;
+	
+	case 2:
+		glVertex3f(bleft->min[0], bleft->max[1], bleft->min[2]);
+		glVertex3f(bleft->max[0], bleft->max[1], bleft->min[2]);
+		glVertex3f(bleft->max[0], bleft->max[1], bleft->min[2]);
+		glVertex3f(bleft->max[0], bleft->max[1], bleft->max[2]);
+		glVertex3f(bleft->max[0], bleft->max[1], bleft->max[2]);
+		glVertex3f(bleft->min[0], bleft->max[1], bleft->max[2]);
+		glVertex3f(bleft->min[0], bleft->max[1], bleft->max[2]);
+		glVertex3f(bleft->min[0], bleft->max[1], bleft->min[2]);
+		break;
+
+	default:
+		break;
+	}*/
 }
 
 bool Scene::build_kdtree()
@@ -442,6 +484,7 @@ static bool build_kdtree(KDNode *kd, const Face *faces, int level)
 	kdleft->cost = best_cost[0];
 	kdright->cost = best_cost[1];
 
+	// TODO would it be much better if we actually split faces that straddle the splitting plane?
 	for(size_t i=0; i<kd->face_idx.size(); i++) {
 		int fidx = kd->face_idx[i];
 		const Face *face = faces + fidx;
@@ -483,7 +526,7 @@ static float eval_cost(const Face *faces, const int *face_idx, int num_faces, co
 	}
 
 	float sarea = aabb.calc_surface_area();
-	if(sarea < 1e-8) {
+	if(sarea < 1e-6) {
 		return FLT_MAX;	// heavily penalize 0-area voxels
 	}
 
