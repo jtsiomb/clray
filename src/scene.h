@@ -54,7 +54,8 @@ struct KDNodeGPU {
 	AABBox aabb;
 	int face_idx[32];
 	int num_faces;
-	int padding[3];
+	int left, right;
+	int padding;
 };
 
 
@@ -75,8 +76,9 @@ public:
 
 	bool add_mesh(Mesh *m);
 	int get_num_meshes() const;
-	int get_num_materials() const;
 	int get_num_faces() const;
+	int get_num_materials() const;
+	int get_num_kdnodes() const;
 
 	Material *get_materials();
 	const Material *get_materials() const;
@@ -86,7 +88,6 @@ public:
 
 	const Face *get_face_buffer() const;
 	const KDNodeGPU *get_kdtree_buffer() const;
-	int get_kdtree_buffer_size() const;
 
 	void draw_kdtree() const;
 	bool build_kdtree();

@@ -62,7 +62,8 @@ struct KDNode {
 	struct AABBox aabb;
 	int face_idx[32];
 	int num_faces;
-	int padding[3];
+	int left, right;
+	int padding;
 };
 
 #define MIN_ENERGY	0.001
@@ -117,9 +118,9 @@ kernel void render(global float4 *fb,
 			ray.origin = sp.pos;
 			ray.dir = reflect(-ray.dir, sp.norm);
 
-			energy *= sp.mat.ks * sp.mat.kr;
+			energy *= refl_col;
 		} else {
-			iter = INT_MAX - 1;	// to break out of the loop
+			break;
 		}
 	}
 
@@ -171,7 +172,7 @@ bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint
 
 	int idxstack[STACK_SIZE];
 	int top = 0;			// points after the topmost element of the stack
-	idxstack[top++] = 1;	// root at tree[1] (heap)
+	idxstack[top++] = 0;	// root at tree[0]
 
 	while(top > 0) {
 		int idx = idxstack[--top];	// remove this index from the stack and process it
@@ -186,7 +187,7 @@ bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint
 		}*/
 
 		if(intersect_aabb(ray, node->aabb)) {
-			if(node->num_faces >= 0) {
+			if(node->left == -1) {
 				// leaf node... check each face in turn and update the nearest intersection as needed
 				for(int i=0; i<node->num_faces; i++) {
 					struct SurfPoint spt;
@@ -199,10 +200,10 @@ bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint
 			} else {
 				// internal node... recurse to the children
 				/*if(get_global_id(0) == 0) {
-					printf("pushing %d's children %d and %d\n", idx, idx * 2, idx * 2 + 1);
+					printf("pushing %d's children %d and %d\n", idx, node->left, node->right);
 				}*/
-				idxstack[top++] = idx * 2;
-				idxstack[top++] = idx * 2 + 1;
+				idxstack[top++] = node->left;
+				idxstack[top++] = node->right;
 			}
 		}
 	}

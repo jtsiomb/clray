@@ -1,15 +1,18 @@
+#include <stdlib.h>
 #include <math.h>
 #include <float.h>
 #include <assert.h>
+#include <map>
 #include "scene.h"
 #include "ogl.h"
 
 
+static void flatten_kdtree(const KDNode *node, KDNodeGPU *kdbuf, int *count, std::map<const KDNode*, int> *flatmap);
+static void fix_child_links(const KDNode *node, KDNodeGPU *kdbuf, const std::map<const KDNode*, int> &flatmap);
 static void draw_kdtree(const KDNode *node, int level = 0);
 static bool build_kdtree(KDNode *kd, const Face *faces, int level = 0);
 static float eval_cost(const Face *faces, const int *face_idx, int num_faces, const AABBox &aabb, int axis);
 static void free_kdtree(KDNode *node);
-static void kdtree_gpu_flatten(KDNodeGPU *kdbuf, int idx, const KDNode *node);
 static void print_item_counts(const KDNode *node, int level);
 
 
@@ -123,6 +126,11 @@ int Scene::get_num_materials() const
 	return (int)matlib.size();
 }
 
+int Scene::get_num_kdnodes() const
+{
+	return kdtree_nodes(kdtree);
+}
+
 Material *Scene::get_materials()
 {
 	if(matlib.empty()) {
@@ -159,6 +167,27 @@ const Face *Scene::get_face_buffer() const
 	return facebuf;
 }
 
+static int find_node_index(const KDNode *node, const std::map<const KDNode*, int> &flatmap);
+
+static bool validate_flat_tree(const KDNode *node, const KDNodeGPU *kdbuf, int count, const std::map<const KDNode*, int> &flatmap)
+{
+	if(!node) return true;
+
+	int idx = find_node_index(node, flatmap);
+	int left_idx = find_node_index(node->left, flatmap);
+	int right_idx = find_node_index(node->right, flatmap);
+
+	if(kdbuf[idx].left != left_idx) {
+		fprintf(stderr, "%d's left should be %d. it's: %d\n", idx, left_idx, kdbuf[idx].left);
+		return false;
+	}
+	if(kdbuf[idx].right != right_idx) {
+		fprintf(stderr, "%d's right should be %d. it's: %d\n", idx, right_idx, kdbuf[idx].right);
+		return false;
+	}
+	return validate_flat_tree(node->left, kdbuf, count, flatmap) && validate_flat_tree(node->right, kdbuf, count, flatmap);
+}
+
 const KDNodeGPU *Scene::get_kdtree_buffer() const
 {
 	if(kdbuf) {
@@ -169,29 +198,72 @@ const KDNodeGPU *Scene::get_kdtree_buffer() const
 		((Scene*)this)->build_kdtree();
 	}
 
-	int max_nodes = (int)pow(2, kdtree_depth(kdtree)) - 1;
-	printf("allocating storage for the complete tree (%d)\n", max_nodes);
+	/* we'll associate kdnodes with flattened array indices through this map as
+	 * we add them so that the second child-index pass, will be able to find
+	 * the children indices of each node.
+	 */
+	std::map<const KDNode*, int> flatmap;
+	flatmap[0] = -1;
 
-	kdbuf = new KDNodeGPU[max_nodes + 1];
-	kdtree_gpu_flatten(kdbuf, 1, kdtree);
+	int num_nodes = get_num_kdnodes();
+	kdbuf = new KDNodeGPU[num_nodes];
+
+	int count = 0;
+
+	// first arrange the kdnodes into an array (flatten)
+	flatten_kdtree(kdtree, kdbuf, &count, &flatmap);
+
+	// then fix all the left/right links to point to the correct nodes
+	fix_child_links(kdtree, kdbuf, flatmap);
+
+	assert(validate_flat_tree(kdtree, kdbuf, count, flatmap));
+
 	return kdbuf;
 }
 
-static int ipow(int x, int n)
+static void flatten_kdtree(const KDNode *node, KDNodeGPU *kdbuf, int *count, std::map<const KDNode*, int> *flatmap)
 {
-	assert(n >= 0);
+	int idx = (*count)++;
 
-	int res = 1;
-	for(int i=0; i<n; i++) {
-		res *= x;
+	// copy the node
+	kdbuf[idx].aabb = node->aabb;
+	for(size_t i=0; i<node->face_idx.size(); i++) {
+		kdbuf[idx].face_idx[i] = node->face_idx[i];
 	}
-	return res;
+	kdbuf[idx].num_faces = node->face_idx.size();
+
+	// update the node* -> array-position mapping
+	(*flatmap)[node] = idx;
+
+	// recurse to the left/right (if we're not in a leaf node)
+	if(node->left) {
+		assert(node->right);
+
+		flatten_kdtree(node->left, kdbuf, count, flatmap);
+		flatten_kdtree(node->right, kdbuf, count, flatmap);
+	}
 }
 
-int Scene::get_kdtree_buffer_size() const
+static int find_node_index(const KDNode *node, const std::map<const KDNode*, int> &flatmap)
 {
-	// 2**depth - 1 nodes for the complete tree + 1 for the unused heap item 0.
-	return ipow(2, kdtree_depth(kdtree)) * sizeof(KDNodeGPU);
+	std::map<const KDNode*, int>::const_iterator it = flatmap.find(node);
+	assert(it != flatmap.end());
+	return it->second;
+}
+
+static void fix_child_links(const KDNode *node, KDNodeGPU *kdbuf, const std::map<const KDNode*, int> &flatmap)
+{
+	if(!node) return;
+
+	int idx = find_node_index(node, flatmap);
+
+	kdbuf[idx].left = find_node_index(node->left, flatmap);
+	if(!node->left && kdbuf[idx].left != -1) abort();
+	kdbuf[idx].right = find_node_index(node->right, flatmap);
+	if(!node->right && kdbuf[idx].right != -1) abort();
+
+	fix_child_links(node->left, kdbuf, flatmap);
+	fix_child_links(node->right, kdbuf, flatmap);
 }
 
 void Scene::draw_kdtree() const
@@ -440,33 +512,6 @@ int kdtree_nodes(const KDNode *node)
 {
 	if(!node) return 0;
 	return kdtree_nodes(node->left) + kdtree_nodes(node->right) + 1;
-}
-
-#define MAX_FACES	(sizeof dest->face_idx / sizeof *dest->face_idx)
-static void kdtree_gpu_flatten(KDNodeGPU *kdbuf, int idx, const KDNode *node)
-{
-	KDNodeGPU *dest = kdbuf + idx;
-
-	dest->aabb = node->aabb;
-	dest->num_faces = 0;
-
-	for(size_t i=0; i<node->face_idx.size(); i++) {
-		if(dest->num_faces >= (int)MAX_FACES) {
-			fprintf(stderr, "kdtree_gpu_flatten WARNING: more than %d faces in node, skipping!\n", (int)MAX_FACES);
-			break;
-		}
-		dest->face_idx[dest->num_faces++] = node->face_idx[i];
-	}
-
-	if(node->left) {
-		assert(node->right);
-		assert(!dest->num_faces);
-
-		dest->num_faces = -1;
-
-		kdtree_gpu_flatten(kdbuf, idx * 2, node->left);
-		kdtree_gpu_flatten(kdbuf, idx * 2 + 1, node->right);
-	}
 }
 
 static void print_item_counts(const KDNode *node, int level)

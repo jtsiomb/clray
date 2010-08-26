@@ -102,7 +102,7 @@ bool init_renderer(int xsz, int ysz, Scene *scn)
 	prog->set_arg_buffer(KARG_PRIM_RAYS, ARG_RD, xsz * ysz * sizeof *prim_rays, prim_rays);
 	prog->set_arg_buffer(KARG_XFORM, ARG_RD, 16 * sizeof(float));
 	prog->set_arg_buffer(KARG_INVTRANS_XFORM, ARG_RD, 16 * sizeof(float));
-	prog->set_arg_buffer(KARG_KDTREE, ARG_RD, scn->get_kdtree_buffer_size(), kdbuf);
+	prog->set_arg_buffer(KARG_KDTREE, ARG_RD, scn->get_num_kdnodes() * sizeof *kdbuf, kdbuf);
 
 	if(prog->get_num_args() < NUM_KERNEL_ARGS) {
 		return false;
