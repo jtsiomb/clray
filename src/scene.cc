@@ -6,6 +6,9 @@
 #include "scene.h"
 #include "ogl.h"
 
+#define CHECK_AABB(aabb)	\
+	assert(aabb.max[0] >= aabb.min[0] && aabb.max[1] >= aabb.min[1] && aabb.max[2] >= aabb.min[2])
+
 
 #define MIN(a, b)	((a) < (b) ? (a) : (b))
 #define MAX(a, b)	((a) > (b) ? (a) : (b))
@@ -227,14 +230,21 @@ const KDNodeGPU *Scene::get_kdtree_buffer() const
 
 static void flatten_kdtree(const KDNode *node, KDNodeGPU *kdbuf, int *count, std::map<const KDNode*, int> *flatmap)
 {
+	const size_t max_node_items = sizeof kdbuf[0].face_idx / sizeof kdbuf[0].face_idx[0];
 	int idx = (*count)++;
 
 	// copy the node
 	kdbuf[idx].aabb = node->aabb;
+	kdbuf[idx].num_faces = 0;
+
 	for(size_t i=0; i<node->face_idx.size(); i++) {
+		if(i >= max_node_items) {
+			fprintf(stderr, "WARNING too many faces per leaf node!\n");
+			break;
+		}
 		kdbuf[idx].face_idx[i] = node->face_idx[i];
+		kdbuf[idx].num_faces++;
 	}
-	kdbuf[idx].num_faces = node->face_idx.size();
 
 	// update the node* -> array-position mapping
 	(*flatmap)[node] = idx;
@@ -417,6 +427,8 @@ bool Scene::build_kdtree()
 		kdtree->face_idx.push_back(i);	// add the face
 	}
 
+	CHECK_AABB(kdtree->aabb);
+
 	// calculate the heuristic for the root
 	kdtree->cost = eval_cost(faces, &kdtree->face_idx[0], kdtree->face_idx.size(), kdtree->aabb, 0);
 
@@ -451,6 +463,10 @@ static void find_best_split(const KDNode *node, int axis, const Face *faces, Spl
 		splitpt[1] = MAX(face->v[0].pos[axis], MAX(face->v[1].pos[axis], face->v[2].pos[axis]));
 
 		for(int j=0; j<2; j++) {
+			if(splitpt[j] <= node->aabb.min[axis] || splitpt[j] >= node->aabb.max[axis]) {
+				continue;
+			}
+
 			AABBox aabb_left, aabb_right;
 			aabb_left = aabb_right = node->aabb;
 			aabb_left.max[axis] = splitpt[j];
@@ -484,9 +500,10 @@ static bool build_kdtree(KDNode *kd, const Face *faces, int level)
 	}
 
 	Split best_split;
+	best_split.axis = -1;
 	best_split.sum_cost = FLT_MAX;
 
-	for(int i=0; i<1; i++) {
+	for(int i=0; i<3; i++) {
 		Split split;
 		find_best_split(kd, i, faces, &split);
 
@@ -495,12 +512,16 @@ static bool build_kdtree(KDNode *kd, const Face *faces, int level)
 		}
 	}
 
-	kd->axis = best_split.axis;
+	if(best_split.axis == -1) {
+		return true;	// can't split any more, only 0-area splits available
+	}
 
 	//printf("current cost: %f,   best_cost: %f\n", kd->cost, best_sum_cost);
 	if(best_split.sum_cost > kd->cost && (opt_max_items == 0 || (int)kd->face_idx.size() <= opt_max_items)) {
 		return true;	// stop splitting if it doesn't reduce the cost
 	}
+
+	kd->axis = best_split.axis;
 
 	// create the two children
 	KDNode *kdleft, *kdright;
@@ -556,11 +577,28 @@ static float eval_cost(const Face *faces, const int *face_idx, int num_faces, co
 		}
 	}
 
-	float sarea = aabb.calc_surface_area();
-	if(sarea < 1e-6) {
+	float dx = aabb.max[0] - aabb.min[0];
+	float dy = aabb.max[1] - aabb.min[1];
+	float dz = aabb.max[2] - aabb.min[2];
+
+	if(dx < 0.0) {
+		fprintf(stderr, "FOO DX = %f\n", dx);
+		abort();
+	}
+	if(dy < 0.0) {
+		fprintf(stderr, "FOO DX = %f\n", dy);
+		abort();
+	}
+	if(dz < 0.0) {
+		fprintf(stderr, "FOO DX = %f\n", dz);
+		abort();
+	}
+
+	if(dx < 1e-6 || dy < 1e-6 || dz < 1e-6) {
 		return FLT_MAX;	// heavily penalize 0-area voxels
 	}
 
+	float sarea = 2.0 * (dx + dy + dz);//aabb.calc_surface_area();
 	return tcost + sarea * num_inside * icost;
 }
 
