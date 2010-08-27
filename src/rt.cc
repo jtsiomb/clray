@@ -53,7 +53,7 @@ static Light lightlist[] = {
 static RendInfo rinf;
 
 
-bool init_renderer(int xsz, int ysz, Scene *scn)
+bool init_renderer(int xsz, int ysz, Scene *scn, unsigned int tex)
 {
 	// render info
 	rinf.ambient[0] = rinf.ambient[1] = rinf.ambient[2] = 0.0;
@@ -94,7 +94,7 @@ bool init_renderer(int xsz, int ysz, Scene *scn)
 	// XXX now we can actually destroy the original kdtree and keep only the GPU version
 
 	/* setup argument buffers */
-	prog->set_arg_buffer(KARG_FRAMEBUFFER, ARG_WR, xsz * ysz * 4 * sizeof(float));
+	prog->set_arg_texture(KARG_FRAMEBUFFER, ARG_WR, tex);
 	prog->set_arg_buffer(KARG_RENDER_INFO, ARG_RD, sizeof rinf, &rinf);
 	prog->set_arg_buffer(KARG_FACES, ARG_RD, rinf.num_faces * sizeof(Face), faces);
 	prog->set_arg_buffer(KARG_MATLIB, ARG_RD, scn->get_num_materials() * sizeof(Material), scn->get_materials());
@@ -125,13 +125,32 @@ void destroy_renderer()
 
 bool render()
 {
+	// XXX do we need to call glFinish ?
+
 	long tm0 = get_msec();
+
+	cl_event ev;
+	CLMemBuffer *texbuf = prog->get_arg_buffer(KARG_FRAMEBUFFER);
+
+	if(!acquire_gl_object(texbuf, &ev)) {
+		return false;
+	}
+
+	// make sure that we will wait for the acquire to finish before running
+	prog->set_wait_event(ev);
 
 	if(!prog->run(1, global_size)) {
 		return false;
 	}
 
-	long tm_run = get_msec() - tm0;
+	if(!release_gl_object(texbuf, &ev)) {
+		return false;
+	}
+	clWaitForEvents(1, &ev);
+
+	printf("rendered in %ld msec\n", get_msec() - tm0);
+
+	/*long tm_run = get_msec() - tm0;
 
 	CLMemBuffer *mbuf = prog->get_arg_buffer(KARG_FRAMEBUFFER);
 	void *fb = map_mem_buffer(mbuf, MAP_RD);
@@ -146,6 +165,7 @@ bool render()
 	long tm_upd = get_msec() - tm0 - tm_run;
 
 	printf("render %ld msec (%ld run, %ld upd)\n", tm_run + tm_upd, tm_run, tm_upd);
+	*/
 	return true;
 }
 

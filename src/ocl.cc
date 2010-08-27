@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <assert.h>
 #ifndef _MSC_VER
 #include <alloca.h>
 #else
@@ -12,13 +13,14 @@
 #endif
 #include <sys/stat.h>
 #include "ocl.h"
+#include "ogl.h"
 #include "ocl_errstr.h"
 
+#if defined(unix) || defined(__unix__)
+#include <X11/Xlib.h>
+#include <GL/glx.h>
+#endif
 
-class InitCL {
-public:
-	InitCL();
-};
 
 struct device_info {
 	cl_device_id id;
@@ -33,7 +35,6 @@ struct device_info {
 	unsigned long mem_size;
 };
 
-static bool init_opencl(void);
 static int select_device(struct device_info *di, int (*devcmp)(struct device_info*, struct device_info*));
 static int get_dev_info(cl_device_id dev, struct device_info *di);
 static int devcmp(struct device_info *a, struct device_info *b);
@@ -42,26 +43,36 @@ static void print_memsize(FILE *out, unsigned long memsz);
 static const char *clstrerror(int err);
 
 
-static InitCL initcl;
 static cl_context ctx;
 static cl_command_queue cmdq;
 static device_info devinf;
 
-InitCL::InitCL()
-{
-	if(!init_opencl()) {
-		exit(0);
-	}
-}
-
-static bool init_opencl(void)
+bool init_opencl()
 {
 	if(select_device(&devinf, devcmp) == -1) {
 		return false;
 	}
 
+#if defined(__APPLE__)
+#error "CL/GL context sharing not implemented on MacOSX yet"
+#elif defined(unix) || defined(__unix__)
+	Display *dpy = glXGetCurrentDisplay();
+	GLXContext glctx = glXGetCurrentContext();
 
-	if(!(ctx = clCreateContext(0, 1, &devinf.id, 0, 0, 0))) {
+	assert(dpy && glctx);
+
+	cl_context_properties prop[] = {
+		CL_GLX_DISPLAY_KHR, (cl_context_properties)dpy,
+		CL_GL_CONTEXT_KHR, (cl_context_properties)glctx,
+		0
+	};
+#elif defined(WIN32) || defined(__WIN32__)
+#error "CL/GL context sharing not implemented on windows yet"
+#else
+#error "unknown or unsupported platform"
+#endif
+
+	if(!(ctx = clCreateContext(prop, 1, &devinf.id, 0, 0, 0))) {
 		fprintf(stderr, "failed to create opencl context\n");
 		return false;
 	}
@@ -94,6 +105,25 @@ CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, const void *buf)
 	mbuf->mem = mem;
 	mbuf->size = sz;
 	mbuf->ptr = 0;
+	mbuf->tex = 0;
+	return mbuf;
+}
+
+CLMemBuffer *create_mem_buffer(int rdwr, unsigned int tex)
+{
+	int err;
+	cl_mem mem;
+
+	if(!(mem = clCreateFromGLTexture2D(ctx, rdwr, GL_TEXTURE_2D, 0, tex, &err))) {
+		fprintf(stderr, "failed to create memory buffer from GL texture %u: %s\n", tex, clstrerror(err));
+		return 0;
+	}
+
+	CLMemBuffer *mbuf = new CLMemBuffer;
+	mbuf->mem = mem;
+	mbuf->size = 0;
+	mbuf->ptr = 0;
+	mbuf->tex = tex;
 	return mbuf;
 }
 
@@ -105,7 +135,7 @@ void destroy_mem_buffer(CLMemBuffer *mbuf)
 	}
 }
 
-void *map_mem_buffer(CLMemBuffer *mbuf, int rdwr)
+void *map_mem_buffer(CLMemBuffer *mbuf, int rdwr, cl_event *ev)
 {
 	if(!mbuf) return 0;
 
@@ -116,7 +146,7 @@ void *map_mem_buffer(CLMemBuffer *mbuf, int rdwr)
 #endif
 
 	int err;
-	mbuf->ptr = clEnqueueMapBuffer(cmdq, mbuf->mem, 1, rdwr, 0, mbuf->size, 0, 0, 0, &err);
+	mbuf->ptr = clEnqueueMapBuffer(cmdq, mbuf->mem, 1, rdwr, 0, mbuf->size, 0, 0, ev, &err);
 	if(!mbuf->ptr) {
 		fprintf(stderr, "failed to map buffer: %s\n", clstrerror(err));
 		return 0;
@@ -124,32 +154,61 @@ void *map_mem_buffer(CLMemBuffer *mbuf, int rdwr)
 	return mbuf->ptr;
 }
 
-void unmap_mem_buffer(CLMemBuffer *mbuf)
+void unmap_mem_buffer(CLMemBuffer *mbuf, cl_event *ev)
 {
 	if(!mbuf || !mbuf->ptr) return;
-	clEnqueueUnmapMemObject(cmdq, mbuf->mem, mbuf->ptr, 0, 0, 0);
+	clEnqueueUnmapMemObject(cmdq, mbuf->mem, mbuf->ptr, 0, 0, ev);
 	mbuf->ptr = 0;
 }
 
-bool write_mem_buffer(CLMemBuffer *mbuf, size_t sz, const void *src)
+bool write_mem_buffer(CLMemBuffer *mbuf, size_t sz, const void *src, cl_event *ev)
 {
 	if(!mbuf) return false;
 
 	int err;
-	if((err = clEnqueueWriteBuffer(cmdq, mbuf->mem, 1, 0, sz, src, 0, 0, 0)) != 0) {
+	if((err = clEnqueueWriteBuffer(cmdq, mbuf->mem, 1, 0, sz, src, 0, 0, ev)) != 0) {
 		fprintf(stderr, "failed to write buffer: %s\n", clstrerror(err));
 		return false;
 	}
 	return true;
 }
 
-bool read_mem_buffer(CLMemBuffer *mbuf, size_t sz, void *dest)
+bool read_mem_buffer(CLMemBuffer *mbuf, size_t sz, void *dest, cl_event *ev)
 {
 	if(!mbuf) return false;
 
 	int err;
-	if((err = clEnqueueReadBuffer(cmdq, mbuf->mem, 1, 0, sz, dest, 0, 0, 0)) != 0) {
+	if((err = clEnqueueReadBuffer(cmdq, mbuf->mem, 1, 0, sz, dest, 0, 0, ev)) != 0) {
 		fprintf(stderr, "failed to read buffer: %s\n", clstrerror(err));
+		return false;
+	}
+	return true;
+}
+
+
+bool acquire_gl_object(CLMemBuffer *mbuf, cl_event *ev)
+{
+	if(!mbuf || !mbuf->tex) {
+		return false;
+	}
+
+	int err;
+	if((err = clEnqueueAcquireGLObjects(cmdq, 1, &mbuf->mem, 0, 0, ev)) != 0) {
+		fprintf(stderr, "failed to acquire gl object: %s\n", clstrerror(err));
+		return false;
+	}
+	return true;
+}
+
+bool release_gl_object(CLMemBuffer *mbuf, cl_event *ev)
+{
+	if(!mbuf || !mbuf->tex) {
+		return false;
+	}
+
+	int err;
+	if((err = clEnqueueReleaseGLObjects(cmdq, 1, &mbuf->mem, 0, 0, ev)) != 0) {
+		fprintf(stderr, "failed to release gl object: %s\n", clstrerror(err));
 		return false;
 	}
 	return true;
@@ -169,10 +228,19 @@ CLProgram::CLProgram(const char *kname)
 	this->kname = kname;
 	args.resize(16);
 	built = false;
+
+	wait_event = last_event = 0;
 }
 
 CLProgram::~CLProgram()
 {
+	if(wait_event) {
+		clReleaseEvent(wait_event);
+	}
+	if(last_event) {
+		clReleaseEvent(last_event);
+	}
+
 	if(prog) {
 
 		clReleaseProgram(prog);
@@ -248,8 +316,28 @@ bool CLProgram::set_arg_buffer(int idx, int rdwr, size_t sz, const void *ptr)
 	printf("create argument %d buffer: %d bytes\n", idx, (int)sz);
 	CLMemBuffer *buf;
 
-	if(sz <= 0 || !(buf = create_mem_buffer(rdwr, sz, ptr))) {
-		fprintf(stderr, "invalid size while creating argument buffer %d: %d\n", idx, (int)sz);
+	if(sz <= 0) {
+		fprintf(stderr, "invalid size while creating argument buffer %d: %d bytes\n", idx, (int)sz);
+		return false;
+	}
+	if(!(buf = create_mem_buffer(rdwr, sz, ptr))) {
+		return false;
+	}
+
+	if((int)args.size() <= idx) {
+		args.resize(idx + 1);
+	}
+	args[idx].type = ARGTYPE_MEM_BUF;
+	args[idx].v.mbuf = buf;
+	return true;
+}
+
+bool CLProgram::set_arg_texture(int idx, int rdwr, unsigned int tex)
+{
+	printf("create argument %d from texture %u\n", idx, tex);
+	CLMemBuffer *buf;
+
+	if(!(buf = create_mem_buffer(rdwr, tex))) {
 		return false;
 	}
 
@@ -284,7 +372,7 @@ bool CLProgram::build()
 {
 	int err;
 
-	if((err = clBuildProgram(prog, 0, 0, 0, 0, 0)) != 0) {
+	if((err = clBuildProgram(prog, 0, 0, "-cl-mad-enable", 0, 0)) != 0) {
 		size_t sz;
 		clGetProgramBuildInfo(prog, devinf.id, CL_PROGRAM_BUILD_LOG, 0, 0, &sz);
 
@@ -376,17 +464,35 @@ bool CLProgram::run(int dim, ...) const
 	}
 	va_end(ap);
 
-	int err;
-	cl_event event;
+	if(last_event) {
+		clReleaseEvent(last_event);
+	}
 
-	if((err = clEnqueueNDRangeKernel(cmdq, kernel, dim, 0, global_size, 0, 0, 0, &event)) != 0) {
+	int err;
+	if((err = clEnqueueNDRangeKernel(cmdq, kernel, dim, 0, global_size, 0,
+					wait_event ? 1 : 0, wait_event ? &wait_event : 0, &last_event)) != 0) {
 		fprintf(stderr, "error executing kernel: %s\n", clstrerror(err));
 		return false;
 	}
 
-	clWaitForEvents(1, &event);
-	clReleaseEvent(event);
+	if(wait_event) {
+		clReleaseEvent(wait_event);
+		wait_event = 0;
+	}
 	return true;
+}
+
+void CLProgram::set_wait_event(cl_event ev)
+{
+	if(wait_event) {
+		clReleaseEvent(wait_event);
+	}
+	wait_event = ev;
+}
+
+cl_event CLProgram::get_last_event() const
+{
+	return last_event;
 }
 
 static int select_device(struct device_info *dev_inf, int (*devcmp)(struct device_info*, struct device_info*))

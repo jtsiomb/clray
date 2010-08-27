@@ -80,7 +80,8 @@ void transform_ray(struct Ray *ray, global const float *xform, global const floa
 float4 calc_bary(float4 pt, global const struct Face *face, float4 norm);
 float mean(float4 v);
 
-kernel void render(global float4 *fb,
+
+kernel void render(write_only image2d_t fb,
 		global const struct RendInfo *rinf,
 		global const struct Face *faces,
 		global const struct Material *matlib,
@@ -124,7 +125,14 @@ kernel void render(global float4 *fb,
 		}
 	}
 
-	fb[idx] = pixel;
+	int img_x = get_image_width(fb);
+
+	int2 coord;
+	coord.x = idx % img_x;
+	coord.y = idx / img_x;
+
+	write_imagef(fb, coord, pixel);
+	//fb[idx] = pixel;
 }
 
 float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)

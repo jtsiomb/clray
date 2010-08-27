@@ -5,6 +5,7 @@
 #include <string>
 #ifndef __APPLE__
 #include <CL/cl.h>
+#include <CL/cl_gl.h>
 #else
 #include <OpenCL/opencl.h>
 #endif
@@ -25,16 +26,24 @@ struct CLMemBuffer {
 	cl_mem mem;
 	size_t size;
 	void *ptr;
+	unsigned int tex;
 };
 
-CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, const void *buf = 0);
+
+bool init_opencl();
+
+CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, const void *buf);
+CLMemBuffer *create_mem_buffer(int rdwr, unsigned int tex);
 void destroy_mem_buffer(CLMemBuffer *mbuf);
 
-void *map_mem_buffer(CLMemBuffer *mbuf, int rdwr);
-void unmap_mem_buffer(CLMemBuffer *mbuf);
+void *map_mem_buffer(CLMemBuffer *mbuf, int rdwr, cl_event *ev = 0);
+void unmap_mem_buffer(CLMemBuffer *mbuf, cl_event *ev = 0);
 
-bool write_mem_buffer(CLMemBuffer *mbuf, size_t sz, const void *src);
-bool read_mem_buffer(CLMemBuffer *mbuf, size_t sz, void *dest);
+bool write_mem_buffer(CLMemBuffer *mbuf, size_t sz, const void *src, cl_event *ev = 0);
+bool read_mem_buffer(CLMemBuffer *mbuf, size_t sz, void *dest, cl_event *ev = 0);
+
+bool acquire_gl_object(CLMemBuffer *mbuf, cl_event *ev = 0);
+bool release_gl_object(CLMemBuffer *mbuf, cl_event *ev = 0);
 
 enum {
 	ARGTYPE_NONE,
@@ -65,6 +74,8 @@ private:
 	cl_kernel kernel;
 	std::vector<CLArg> args;
 	bool built;
+	mutable cl_event wait_event;
+	mutable cl_event last_event;
 
 public:
 	CLProgram(const char *kname);
@@ -75,6 +86,7 @@ public:
 	bool set_argi(int arg, int val);
 	bool set_argf(int arg, float val);
 	bool set_arg_buffer(int arg, int rdwr, size_t sz, const void *buf = 0);
+	bool set_arg_texture(int arg, int rdwr, unsigned int tex);
 	CLMemBuffer *get_arg_buffer(int arg);
 	int get_num_args() const;
 
@@ -82,6 +94,12 @@ public:
 
 	bool run() const;
 	bool run(int dim, ...) const;
+
+	// sets an event that has to be completed before running the kernel
+	void set_wait_event(cl_event ev);
+
+	// gets the last event so that we can wait for it to finish
+	cl_event get_last_event() const;
 };
 
 #endif	/* OCL_H_ */

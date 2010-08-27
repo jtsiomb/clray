@@ -11,6 +11,7 @@
 #include "rt.h"
 #include "matrix.h"
 #include "scene.h"
+#include "ocl.h"
 
 void cleanup();
 void disp();
@@ -31,6 +32,7 @@ static bool dbg_show_kdtree = false;
 static bool dbg_show_obj = true;
 
 static Scene scn;
+static unsigned int tex;
 
 int main(int argc, char **argv)
 {
@@ -102,11 +104,6 @@ int main(int argc, char **argv)
 	glutMouseFunc(mouse);
 	glutMotionFunc(motion);
 
-	if(!init_renderer(xsz, ysz, &scn)) {
-		return 1;
-	}
-	atexit(cleanup);
-
 	unsigned int *test_pattern = new unsigned int[xsz * ysz];
 	for(int i=0; i<ysz; i++) {
 		for(int j=0; j<xsz; j++) {
@@ -114,14 +111,23 @@ int main(int argc, char **argv)
 		}
 	}
 
-	/*glGenTextures(1, &tex);
-	glBindTexture(GL_TEXTURE_2D, tex);*/
+	glGenTextures(1, &tex);
+	glBindTexture(GL_TEXTURE_2D, tex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F_ARB, xsz, ysz, 0, GL_RGBA, GL_UNSIGNED_BYTE, test_pattern);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F_ARB, xsz, ysz, 0, GL_RGBA, GL_UNSIGNED_BYTE, test_pattern);
 	delete [] test_pattern;
+
+	if(!init_opencl()) {
+		return 1;
+	}
+
+	if(!init_renderer(xsz, ysz, &scn, tex)) {
+		return 1;
+	}
+	atexit(cleanup);
 
 	glutMainLoop();
 	return 0;

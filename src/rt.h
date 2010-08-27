@@ -3,7 +3,7 @@
 
 #include "scene.h"
 
-bool init_renderer(int xsz, int ysz, Scene *scn);
+bool init_renderer(int xsz, int ysz, Scene *scn, unsigned int tex);
 void destroy_renderer();
 bool render();
 void set_xform(float *matrix, float *invtrans);
