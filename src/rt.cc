@@ -94,7 +94,11 @@ bool init_renderer(int xsz, int ysz, Scene *scn, unsigned int tex)
 	// XXX now we can actually destroy the original kdtree and keep only the GPU version
 
 	/* setup argument buffers */
+#ifdef CLGL_INTEROP
 	prog->set_arg_texture(KARG_FRAMEBUFFER, ARG_WR, tex);
+#else
+	prog->set_arg_image(KARG_FRAMEBUFFER, ARG_WR, xsz, ysz);
+#endif
 	prog->set_arg_buffer(KARG_RENDER_INFO, ARG_RD, sizeof rinf, &rinf);
 	prog->set_arg_buffer(KARG_FACES, ARG_RD, rinf.num_faces * sizeof(Face), faces);
 	prog->set_arg_buffer(KARG_MATLIB, ARG_RD, scn->get_num_materials() * sizeof(Material), scn->get_materials());

@@ -22,9 +22,17 @@ enum {
 	MAP_RDWR	= CL_MAP_READ | CL_MAP_WRITE
 };
 
+enum {
+	MEM_BUFFER,
+	IMAGE_BUFFER
+};
+
 struct CLMemBuffer {
+	int type;
 	cl_mem mem;
+
 	size_t size;
+	size_t xsz, ysz;
 	void *ptr;
 	unsigned int tex;
 };
@@ -34,7 +42,10 @@ bool init_opencl();
 void destroy_opencl();
 
 CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, const void *buf);
-CLMemBuffer *create_mem_buffer(int rdwr, unsigned int tex);
+
+CLMemBuffer *create_image_buffer(int rdwr, int xsz, int ysz, const void *pixels = 0);
+CLMemBuffer *create_image_buffer(int rdwr, unsigned int tex);
+
 void destroy_mem_buffer(CLMemBuffer *mbuf);
 
 void *map_mem_buffer(CLMemBuffer *mbuf, int rdwr, cl_event *ev = 0);
@@ -87,6 +98,7 @@ public:
 	bool set_argi(int arg, int val);
 	bool set_argf(int arg, float val);
 	bool set_arg_buffer(int arg, int rdwr, size_t sz, const void *buf = 0);
+	bool set_arg_image(int arg, int rdwr, int xsz, int ysz, const void *pix = 0);
 	bool set_arg_texture(int arg, int rdwr, unsigned int tex);
 	CLMemBuffer *get_arg_buffer(int arg);
 	int get_num_args() const;

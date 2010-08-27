@@ -122,17 +122,63 @@ CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, const void *buf)
 	}
 
 	CLMemBuffer *mbuf = new CLMemBuffer;
+	mbuf->type = MEM_BUFFER;
 	mbuf->mem = mem;
 	mbuf->size = sz;
+	mbuf->xsz = mbuf->ysz = 0;
 	mbuf->ptr = 0;
 	mbuf->tex = 0;
 	return mbuf;
 }
 
-CLMemBuffer *create_mem_buffer(int rdwr, unsigned int tex)
+CLMemBuffer *create_image_buffer(int rdwr, int xsz, int ysz, const void *pixels)
 {
-	int err;
+	int err, pitch;
 	cl_mem mem;
+	cl_mem_flags flags = rdwr | CL_MEM_ALLOC_HOST_PTR;
+
+	if(pixels) {
+		flags |= CL_MEM_COPY_HOST_PTR;
+		pitch = xsz * 4 * sizeof(float);
+	} else {
+		pitch = 0;
+	}
+
+	cl_image_format fmt = {CL_RGBA, CL_FLOAT};
+
+	if(!(mem = clCreateImage2D(ctx, flags, &fmt, xsz, ysz, pitch, (void*)pixels, &err))) {
+		fprintf(stderr, "failed to create %dx%d image: %s\n", xsz, ysz, clstrerror(err));
+		return 0;
+	}
+
+	CLMemBuffer *mbuf = new CLMemBuffer;
+	mbuf->type = IMAGE_BUFFER;
+	mbuf->mem = mem;
+	mbuf->size = ysz * pitch;
+	mbuf->xsz = xsz;
+	mbuf->ysz = ysz;
+	mbuf->ptr = 0;
+	mbuf->tex = 0;
+	return mbuf;
+}
+
+CLMemBuffer *create_image_buffer(int rdwr, unsigned int tex)
+{
+	int err, xsz, ysz;
+	cl_mem mem;
+
+	glGetError();	// clear previous OpenGL errors
+
+	glPushAttrib(GL_TEXTURE_BIT);
+	glBindTexture(GL_TEXTURE_2D, tex);
+	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &xsz);
+	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &ysz);
+	glPopAttrib();
+
+	if(glGetError()) {
+		fprintf(stderr, "create_image_buffer: GL error while retreiving texture parameters for texture %u\n", tex);
+		return 0;
+	}
 
 	if(!(mem = clCreateFromGLTexture2D(ctx, rdwr, GL_TEXTURE_2D, 0, tex, &err))) {
 		fprintf(stderr, "failed to create memory buffer from GL texture %u: %s\n", tex, clstrerror(err));
@@ -140,10 +186,14 @@ CLMemBuffer *create_mem_buffer(int rdwr, unsigned int tex)
 	}
 
 	CLMemBuffer *mbuf = new CLMemBuffer;
+	mbuf->type = IMAGE_BUFFER;
 	mbuf->mem = mem;
 	mbuf->size = 0;
+	mbuf->xsz = xsz;
+	mbuf->ysz = ysz;
 	mbuf->ptr = 0;
 	mbuf->tex = tex;
+
 	return mbuf;
 }
 
@@ -166,10 +216,27 @@ void *map_mem_buffer(CLMemBuffer *mbuf, int rdwr, cl_event *ev)
 #endif
 
 	int err;
-	mbuf->ptr = clEnqueueMapBuffer(cmdq, mbuf->mem, 1, rdwr, 0, mbuf->size, 0, 0, ev, &err);
-	if(!mbuf->ptr) {
-		fprintf(stderr, "failed to map buffer: %s\n", clstrerror(err));
-		return 0;
+
+	if(mbuf->type == MEM_BUFFER) {
+		mbuf->ptr = clEnqueueMapBuffer(cmdq, mbuf->mem, 1, rdwr, 0, mbuf->size, 0, 0, ev, &err);
+		if(!mbuf->ptr) {
+			fprintf(stderr, "failed to map buffer: %s\n", clstrerror(err));
+			return 0;
+		}
+	} else {
+		assert(mbuf->type == IMAGE_BUFFER);
+
+		size_t orig[] = {0, 0, 0};
+		size_t rgn[] = {mbuf->xsz, mbuf->ysz, 1};
+		size_t pitch;
+
+		mbuf->ptr = clEnqueueMapImage(cmdq, mbuf->mem, 1, rdwr, orig, rgn, &pitch, 0, 0, 0, ev, &err);
+		if(!mbuf->ptr) {
+			fprintf(stderr, "failed to map image: %s\n", clstrerror(err));
+			return 0;
+		}
+
+		assert(pitch == mbuf->xsz * 4 * sizeof(float));
 	}
 	return mbuf->ptr;
 }
@@ -177,6 +244,7 @@ void *map_mem_buffer(CLMemBuffer *mbuf, int rdwr, cl_event *ev)
 void unmap_mem_buffer(CLMemBuffer *mbuf, cl_event *ev)
 {
 	if(!mbuf || !mbuf->ptr) return;
+
 	clEnqueueUnmapMemObject(cmdq, mbuf->mem, mbuf->ptr, 0, 0, ev);
 	mbuf->ptr = 0;
 }
@@ -351,12 +419,29 @@ bool CLProgram::set_arg_buffer(int idx, int rdwr, size_t sz, const void *ptr)
 	return true;
 }
 
+bool CLProgram::set_arg_image(int idx, int rdwr, int xsz, int ysz, const void *pix)
+{
+	printf("create argument %d from %dx%d image\n", idx, xsz, ysz);
+	CLMemBuffer *buf;
+
+	if(!(buf = create_image_buffer(rdwr, xsz, ysz, pix))) {
+		return false;
+	}
+
+	if((int)args.size() <= idx) {
+		args.resize(idx + 1);
+	}
+	args[idx].type = ARGTYPE_MEM_BUF;
+	args[idx].v.mbuf = buf;
+	return true;
+}
+
 bool CLProgram::set_arg_texture(int idx, int rdwr, unsigned int tex)
 {
 	printf("create argument %d from texture %u\n", idx, tex);
 	CLMemBuffer *buf;
 
-	if(!(buf = create_mem_buffer(rdwr, tex))) {
+	if(!(buf = create_image_buffer(rdwr, tex))) {
 		return false;
 	}
 
