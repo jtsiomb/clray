@@ -7,6 +7,10 @@
 #include "ogl.h"
 
 
+#define MIN(a, b)	((a) < (b) ? (a) : (b))
+#define MAX(a, b)	((a) > (b) ? (a) : (b))
+
+
 static void flatten_kdtree(const KDNode *node, KDNodeGPU *kdbuf, int *count, std::map<const KDNode*, int> *flatmap);
 static void fix_child_links(const KDNode *node, KDNodeGPU *kdbuf, const std::map<const KDNode*, int> &flatmap);
 static void draw_kdtree(const KDNode *node, int level = 0);
@@ -341,7 +345,7 @@ static void draw_kdtree(const KDNode *node, int level)
 		glVertex3f(bleft->max[0], bleft->min[1], bleft->max[2]);
 		glVertex3f(bleft->max[0], bleft->min[1], bleft->min[2]);
 		break;
-	
+
 	case 1:
 		glVertex3f(bleft->min[0], bleft->min[1], bleft->max[2]);
 		glVertex3f(bleft->min[0], bleft->max[1], bleft->max[2]);
@@ -352,7 +356,7 @@ static void draw_kdtree(const KDNode *node, int level)
 		glVertex3f(bleft->max[0], bleft->min[1], bleft->max[2]);
 		glVertex3f(bleft->min[0], bleft->min[1], bleft->max[2]);
 		break;
-	
+
 	case 2:
 		glVertex3f(bleft->min[0], bleft->max[1], bleft->min[2]);
 		glVertex3f(bleft->max[0], bleft->max[1], bleft->min[2]);
@@ -427,47 +431,74 @@ bool Scene::build_kdtree()
 	return true;
 }
 
+struct Split {
+	int axis;
+	float pos;
+	float sum_cost;
+	float cost_left, cost_right;
+};
+
+static void find_best_split(const KDNode *node, int axis, const Face *faces, Split *split)
+{
+	Split best_split;
+	best_split.sum_cost = FLT_MAX;
+
+	for(size_t i=0; i<node->face_idx.size(); i++) {
+		const Face *face = faces + node->face_idx[i];
+
+		float splitpt[2];
+		splitpt[0] = MIN(face->v[0].pos[axis], MIN(face->v[1].pos[axis], face->v[2].pos[axis]));
+		splitpt[1] = MAX(face->v[0].pos[axis], MAX(face->v[1].pos[axis], face->v[2].pos[axis]));
+
+		for(int j=0; j<2; j++) {
+			AABBox aabb_left, aabb_right;
+			aabb_left = aabb_right = node->aabb;
+			aabb_left.max[axis] = splitpt[j];
+			aabb_right.min[axis] = splitpt[j];
+
+			float left_cost = eval_cost(faces, &node->face_idx[0], node->face_idx.size(), aabb_left, axis);
+			float right_cost = eval_cost(faces, &node->face_idx[0], node->face_idx.size(), aabb_right, axis);
+			float sum_cost = left_cost + right_cost - accel_param[ACCEL_PARAM_COST_TRAVERSE]; // tcost is added twice
+
+			if(sum_cost < best_split.sum_cost) {
+				best_split.cost_left = left_cost;
+				best_split.cost_right = right_cost;
+				best_split.sum_cost = sum_cost;
+				best_split.pos = splitpt[j];
+			}
+		}
+	}
+
+	assert(split);
+	*split = best_split;
+	split->axis = axis;
+}
+
 static bool build_kdtree(KDNode *kd, const Face *faces, int level)
 {
 	int opt_max_depth = accel_param[ACCEL_PARAM_MAX_TREE_DEPTH];
 	int opt_max_items = accel_param[ACCEL_PARAM_MAX_NODE_ITEMS];
-	int tcost = accel_param[ACCEL_PARAM_COST_TRAVERSE];
 
 	if(kd->face_idx.empty() || level >= opt_max_depth) {
 		return true;
 	}
 
-	int axis = level % 3;
+	Split best_split;
+	best_split.sum_cost = FLT_MAX;
 
-	float best_cost[2], best_sum_cost = FLT_MAX;
-	float best_split;
+	for(int i=0; i<1; i++) {
+		Split split;
+		find_best_split(kd, i, faces, &split);
 
-	for(size_t i=0; i<kd->face_idx.size(); i++) {
-		const Face *face = faces + kd->face_idx[i];
-
-		for(int j=0; j<3; j++) {
-			AABBox aabb_left, aabb_right;
-			const float *split = face->v[j].pos;
-
-			aabb_left = aabb_right = kd->aabb;
-			aabb_left.max[axis] = split[axis];
-			aabb_right.min[axis] = split[axis];
-
-			float left_cost = eval_cost(faces, &kd->face_idx[0], kd->face_idx.size(), aabb_left, axis);
-			float right_cost = eval_cost(faces, &kd->face_idx[0], kd->face_idx.size(), aabb_right, axis);
-			float sum_cost = left_cost + right_cost - tcost;	// tcost is added twice
-
-			if(sum_cost < best_sum_cost) {
-				best_cost[0] = left_cost;
-				best_cost[1] = right_cost;
-				best_sum_cost = sum_cost;
-				best_split = split[axis];
-			}
+		if(split.sum_cost < best_split.sum_cost) {
+			best_split = split;
 		}
 	}
 
+	kd->axis = best_split.axis;
+
 	//printf("current cost: %f,   best_cost: %f\n", kd->cost, best_sum_cost);
-	if(best_sum_cost > kd->cost && (opt_max_items == 0 || (int)kd->face_idx.size() <= opt_max_items)) {
+	if(best_split.sum_cost > kd->cost && (opt_max_items == 0 || (int)kd->face_idx.size() <= opt_max_items)) {
 		return true;	// stop splitting if it doesn't reduce the cost
 	}
 
@@ -478,25 +509,25 @@ static bool build_kdtree(KDNode *kd, const Face *faces, int level)
 
 	kdleft->aabb = kdright->aabb = kd->aabb;
 
-	kdleft->aabb.max[axis] = best_split;
-	kdright->aabb.min[axis] = best_split;
+	kdleft->aabb.max[kd->axis] = best_split.pos;
+	kdright->aabb.min[kd->axis] = best_split.pos;
 
-	kdleft->cost = best_cost[0];
-	kdright->cost = best_cost[1];
+	kdleft->cost = best_split.cost_left;
+	kdright->cost = best_split.cost_right;
 
 	// TODO would it be much better if we actually split faces that straddle the splitting plane?
 	for(size_t i=0; i<kd->face_idx.size(); i++) {
 		int fidx = kd->face_idx[i];
 		const Face *face = faces + fidx;
 
-		if(face->v[0].pos[axis] < best_split ||
-				face->v[1].pos[axis] < best_split ||
-				face->v[2].pos[axis] < best_split) {
+		if(face->v[0].pos[kd->axis] < best_split.pos ||
+				face->v[1].pos[kd->axis] < best_split.pos ||
+				face->v[2].pos[kd->axis] < best_split.pos) {
 			kdleft->face_idx.push_back(fidx);
 		}
-		if(face->v[0].pos[axis] >= best_split ||
-				face->v[1].pos[axis] >= best_split ||
-				face->v[2].pos[axis] >= best_split) {
+		if(face->v[0].pos[kd->axis] >= best_split.pos ||
+				face->v[1].pos[kd->axis] >= best_split.pos ||
+				face->v[2].pos[kd->axis] >= best_split.pos) {
 			kdright->face_idx.push_back(fidx);
 		}
 	}

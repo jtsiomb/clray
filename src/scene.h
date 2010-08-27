@@ -41,6 +41,7 @@ public:
 };
 
 struct KDNode {
+	int axis;
 	AABBox aabb;
 	float cost;
 
