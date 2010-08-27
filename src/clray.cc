@@ -135,7 +135,13 @@ int main(int argc, char **argv)
 
 void cleanup()
 {
+	printf("destroying renderer...\n");
 	destroy_renderer();
+
+	printf("shutting down OpenCL...\n");
+	destroy_opencl();
+
+	printf("done cleaning up\n");
 }
 
 static Matrix4x4 mat, inv_mat, inv_trans;

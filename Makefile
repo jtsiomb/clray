@@ -4,7 +4,7 @@ dep = $(obj:.o=.d)
 bin = test
 
 CXX = g++
-CXXFLAGS = -pedantic -Wall -g
+CXXFLAGS = -pedantic -Wall -g $(def)
 LDFLAGS = $(libgl) $(libcl) -lpthread
 
 ifeq ($(shell uname -s), Darwin)
@@ -13,6 +13,8 @@ ifeq ($(shell uname -s), Darwin)
 else
 	libgl = -lGL -lglut
 	libcl = -lOpenCL
+
+	def = -DCLGL_INTEROP
 endif
 
 $(bin): $(obj)

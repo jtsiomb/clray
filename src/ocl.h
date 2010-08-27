@@ -31,6 +31,7 @@ struct CLMemBuffer {
 
 
 bool init_opencl();
+void destroy_opencl();
 
 CLMemBuffer *create_mem_buffer(int rdwr, size_t sz, const void *buf);
 CLMemBuffer *create_mem_buffer(int rdwr, unsigned int tex);

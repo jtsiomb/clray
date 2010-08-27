@@ -129,6 +129,7 @@ bool render()
 
 	long tm0 = get_msec();
 
+#ifdef CLGL_INTEROP
 	cl_event ev;
 	CLMemBuffer *texbuf = prog->get_arg_buffer(KARG_FRAMEBUFFER);
 
@@ -138,20 +139,24 @@ bool render()
 
 	// make sure that we will wait for the acquire to finish before running
 	prog->set_wait_event(ev);
+#endif
 
 	if(!prog->run(1, global_size)) {
 		return false;
 	}
 
+#ifdef CLGL_INTEROP
 	if(!release_gl_object(texbuf, &ev)) {
 		return false;
 	}
 	clWaitForEvents(1, &ev);
+#endif
 
-	printf("rendered in %ld msec\n", get_msec() - tm0);
-
-	/*long tm_run = get_msec() - tm0;
-
+#ifndef CLGL_INTEROP
+	/* if we don't compile in CL/GL interoperability support, we need
+	 * to copy the output buffer to the OpenGL texture used to displaying
+	 * the image.
+	 */
 	CLMemBuffer *mbuf = prog->get_arg_buffer(KARG_FRAMEBUFFER);
 	void *fb = map_mem_buffer(mbuf, MAP_RD);
 	if(!fb) {
@@ -161,11 +166,9 @@ bool render()
 
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, rinf.xsz, rinf.ysz, GL_RGBA, GL_FLOAT, fb);
 	unmap_mem_buffer(mbuf);
+#endif
 
-	long tm_upd = get_msec() - tm0 - tm_run;
-
-	printf("render %ld msec (%ld run, %ld upd)\n", tm_run + tm_upd, tm_run, tm_upd);
-	*/
+	printf("rendered in %ld msec\n", get_msec() - tm0);
 	return true;
 }
 

@@ -53,6 +53,11 @@ bool init_opencl()
 		return false;
 	}
 
+#ifndef CLGL_INTEROP
+	cl_context_properties *prop = 0;
+
+#else
+
 #if defined(__APPLE__)
 #error "CL/GL context sharing not implemented on MacOSX yet"
 #elif defined(unix) || defined(__unix__)
@@ -72,6 +77,8 @@ bool init_opencl()
 #error "unknown or unsupported platform"
 #endif
 
+#endif	/* CLGL_INTEROP */
+
 	if(!(ctx = clCreateContext(prop, 1, &devinf.id, 0, 0, 0))) {
 		fprintf(stderr, "failed to create opencl context\n");
 		return false;
@@ -82,6 +89,19 @@ bool init_opencl()
 		return false;
 	}
 	return true;
+}
+
+void destroy_opencl()
+{
+	if(cmdq) {
+		clReleaseCommandQueue(cmdq);
+		cmdq = 0;
+	}
+
+	if(ctx) {
+		clReleaseContext(ctx);
+		ctx = 0;
+	}
 }
 
 
@@ -238,15 +258,14 @@ CLProgram::~CLProgram()
 		clReleaseEvent(wait_event);
 	}
 	if(last_event) {
+		clWaitForEvents(1, &last_event);
 		clReleaseEvent(last_event);
 	}
 
 	if(prog) {
-
 		clReleaseProgram(prog);
 	}
 	if(kernel) {
-
 		clReleaseKernel(kernel);
 	}
 	for(size_t i=0; i<args.size(); i++) {
@@ -449,12 +468,6 @@ bool CLProgram::run() const
 
 bool CLProgram::run(int dim, ...) const
 {
-	if(!built) {
-		if(!((CLProgram*)this)->build()) {
-			return false;
-		}
-	}
-
 	va_list ap;
 	size_t *global_size = (size_t*)alloca(dim * sizeof *global_size);
 

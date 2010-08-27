@@ -132,7 +132,6 @@ kernel void render(write_only image2d_t fb,
 	coord.y = idx / img_x;
 
 	write_imagef(fb, coord, pixel);
-	//fb[idx] = pixel;
 }
 
 float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
@@ -187,13 +186,6 @@ bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint
 
 		global const struct KDNode *node = scn->kdtree + idx;
 
-		/*if(get_global_id(0) == 0) {
-			for(int i=0; i<top+1; i++) {
-				printf("   ");
-			}
-			printf("(%d) idx: %d (%p) num_faces: %d\n", top+1, idx, node, node->num_faces);
-		}*/
-
 		if(intersect_aabb(ray, node->aabb)) {
 			if(node->left == -1) {
 				// leaf node... check each face in turn and update the nearest intersection as needed
@@ -207,9 +199,6 @@ bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint
 				}
 			} else {
 				// internal node... recurse to the children
-				/*if(get_global_id(0) == 0) {
-					printf("pushing %d's children %d and %d\n", idx, node->left, node->right);
-				}*/
 				idxstack[top++] = node->left;
 				idxstack[top++] = node->right;
 			}
@@ -226,29 +215,6 @@ bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint
 	}
 	return true;
 }
-
-/*bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *spres)
-{
-	struct SurfPoint sp, sp0;
-	sp0.t = 1.0;
-	sp0.obj = 0;
-
-	for(int i=0; i<scn->num_faces; i++) {
-		if(intersect(ray, scn->faces + i, &sp) && sp.t < sp0.t) {
-			sp0 = sp;
-		}
-	}
-
-	if(!sp0.obj) {
-		return false;
-	}
-
-	if(spres) {
-		*spres = sp0;
-		spres->mat = scn->matlib[sp0.obj->matid];
-	}
-	return true;
-}*/
 
 bool intersect(struct Ray ray, global const struct Face *face, struct SurfPoint *sp)
 {
