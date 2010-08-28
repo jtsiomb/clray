@@ -21,6 +21,10 @@
 #include <GL/glx.h>
 #endif
 
+#ifdef __APPLE__
+#include <OpenGL/CGLCurrent.h>
+#endif
+
 
 struct device_info {
 	cl_device_id id;
@@ -33,10 +37,14 @@ struct device_info {
 	size_t work_group_size;
 
 	unsigned long mem_size;
+
+	char *extensions;
+	bool gl_sharing;
 };
 
 static int select_device(struct device_info *di, int (*devcmp)(struct device_info*, struct device_info*));
 static int get_dev_info(cl_device_id dev, struct device_info *di);
+static void destroy_dev_info(struct device_info *di);
 static int devcmp(struct device_info *a, struct device_info *b);
 static const char *devtypestr(cl_device_type type);
 static void print_memsize(FILE *out, unsigned long memsz);
@@ -53,13 +61,25 @@ bool init_opencl()
 		return false;
 	}
 
+
+
 #ifndef CLGL_INTEROP
 	cl_context_properties *prop = 0;
-
 #else
 
 #if defined(__APPLE__)
-#error "CL/GL context sharing not implemented on MacOSX yet"
+	CGLContextObj glctx = CGLGetCurrentContext();
+	CGLShareGroupObj sgrp = CGLGetShareGroup(glctx);
+
+	cl_context_properties prop[] = {
+#ifdef CL_CONTEXT_PROPERTY_USE_CGL_SHAREGROUP_APPLE
+		CL_CONTEXT_PROPERTY_USE_CGL_SHAREGROUP_APPLE, (cl_context_properties)sgrp,
+#else
+		CL_GL_CONTEXT_KHR, (cl_context_properties)glctx,
+		CL_CGL_SHAREGROUP_KHR, (cl_context_properties)sgrp,
+#endif
+		0
+	};
 #elif defined(unix) || defined(__unix__)
 	Display *dpy = glXGetCurrentDisplay();
 	GLXContext glctx = glXGetCurrentContext();
@@ -72,7 +92,14 @@ bool init_opencl()
 		0
 	};
 #elif defined(WIN32) || defined(__WIN32__)
-#error "CL/GL context sharing not implemented on windows yet"
+	HGLRC glctx = wglGetCurrentContext();
+	HDC dc = wglGetCurrentDC();
+
+	cl_context_properties prop[] = {
+		CL_GL_CONTEXT_KHR, (cl_context_properties)glctx,
+		CL_WGL_HDC_KHR, (cl_context_properties)dc,
+		0
+	};
 #else
 #error "unknown or unsupported platform"
 #endif
@@ -631,7 +658,7 @@ static int select_device(struct device_info *dev_inf, int (*devcmp)(struct devic
 		struct device_info di;
 
 		if(get_dev_info(dev[i], &di) == -1) {
-			free(dev_inf->work_item_sizes);
+			destroy_dev_info(&di);
 			return -1;
 		}
 
@@ -654,6 +681,8 @@ static int select_device(struct device_info *dev_inf, int (*devcmp)(struct devic
 		print_memsize(stdout, di.mem_size);
 		putchar('\n');
 
+		printf("extensions: %s\n", di.extensions);
+
 		if(devcmp(&di, dev_inf) > 0) {
 			free(dev_inf->work_item_sizes);
 			memcpy(dev_inf, &di, sizeof di);
@@ -673,7 +702,6 @@ static int get_dev_info(cl_device_id dev, struct device_info *di)
 {
 	di->id = dev;
 
-
 	clGetDeviceInfo(dev, CL_DEVICE_TYPE, sizeof di->type, &di->type, 0);
 	clGetDeviceInfo(dev, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof di->units, &di->units, 0);
 	clGetDeviceInfo(dev, CL_DEVICE_MAX_CLOCK_FREQUENCY, sizeof di->clock, &di->clock, 0);
@@ -685,7 +713,26 @@ static int get_dev_info(cl_device_id dev, struct device_info *di)
 	clGetDeviceInfo(dev, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof di->work_group_size, &di->work_group_size, 0);
 	clGetDeviceInfo(dev, CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof di->mem_size, &di->mem_size, 0);
 
+	size_t ext_str_len;
+	clGetDeviceInfo(dev, CL_DEVICE_EXTENSIONS, 0, 0, &ext_str_len);
+
+	di->extensions = new char[ext_str_len + 1];
+	clGetDeviceInfo(dev, CL_DEVICE_EXTENSIONS, ext_str_len, di->extensions, 0);
+	di->extensions[ext_str_len] = 0;
+
+	if(strstr(di->extensions, "cl_khr_gl_sharing") || strstr(di->extensions, "cl_APPLE_gl_sharing")) {
+		di->gl_sharing = true;
+	} else {
+		di->gl_sharing = false;
+	}
+
 	return 0;
+}
+
+static void destroy_dev_info(struct device_info *di)
+{
+	delete [] di->work_item_sizes;
+	delete [] di->extensions;
 }
 
 static int devcmp(struct device_info *a, struct device_info *b)

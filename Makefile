@@ -13,7 +13,6 @@ ifeq ($(shell uname -s), Darwin)
 else
 	libgl = -lGL -lglut
 	libcl = -lOpenCL
-
 	def = -DCLGL_INTEROP
 endif
 
