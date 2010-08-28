@@ -503,7 +503,9 @@ bool CLProgram::build()
 {
 	int err;
 
-	if((err = clBuildProgram(prog, 0, 0, "-cl-mad-enable", 0, 0)) != 0) {
+	const char *opt = "-cl-mad-enable -cl-single-precision-constant -cl-fast-relaxed-math";
+
+	if((err = clBuildProgram(prog, 0, 0, opt, 0, 0)) != 0) {
 		size_t sz;
 		clGetProgramBuildInfo(prog, devinf.id, CL_PROGRAM_BUILD_LOG, 0, 0, &sz);
 

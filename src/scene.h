@@ -51,9 +51,10 @@ struct KDNode {
 	KDNode();
 };
 
+#define MAX_NODE_FACES	32
 struct KDNodeGPU {
 	AABBox aabb;
-	int face_idx[32];
+	int face_idx[MAX_NODE_FACES];
 	int num_faces;
 	int left, right;
 	int padding;

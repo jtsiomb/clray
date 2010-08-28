@@ -51,26 +51,28 @@ struct Scene {
 	global const struct Light *lights;
 	int num_lights;
 	global const struct Material *matlib;
-	global const struct KDNode *kdtree;
+	//global const struct KDNode *kdtree;
 };
 
 struct AABBox {
 	float4 min, max;
 };
 
+#define MAX_NODE_FACES	32
 struct KDNode {
 	struct AABBox aabb;
-	int face_idx[32];
+	int face_idx[MAX_NODE_FACES];
 	int num_faces;
 	int left, right;
 	int padding;
 };
 
+#define RAY_MAG		500.0
 #define MIN_ENERGY	0.001
 #define EPSILON		1e-5
 
-float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp);
-bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *sp);
+float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp, read_only image2d_t kdimg);
+bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *sp, read_only image2d_t kdimg);
 bool intersect(struct Ray ray, global const struct Face *face, struct SurfPoint *sp);
 bool intersect_aabb(struct Ray ray, struct AABBox aabb);
 
@@ -79,6 +81,8 @@ float4 transform(float4 v, global const float *xform);
 void transform_ray(struct Ray *ray, global const float *xform, global const float *invtrans);
 float4 calc_bary(float4 pt, global const struct Face *face, float4 norm);
 float mean(float4 v);
+
+void read_kdnode(int idx, struct KDNode *node, read_only image2d_t kdimg);
 
 
 kernel void render(write_only image2d_t fb,
@@ -89,7 +93,8 @@ kernel void render(write_only image2d_t fb,
 		global const struct Ray *primrays,
 		global const float *xform,
 		global const float *invtrans,
-		global const struct KDNode *kdtree)
+		//global const struct KDNode *kdtree
+		read_only image2d_t kdtree_img)
 {
 	int idx = get_global_id(0);
 
@@ -100,7 +105,7 @@ kernel void render(write_only image2d_t fb,
 	scn.lights = lights;
 	scn.num_lights = rinf->num_lights;
 	scn.matlib = matlib;
-	scn.kdtree = kdtree;
+	//scn.kdtree_img = kdtree_img;
 
 	struct Ray ray = primrays[idx];
 	transform_ray(&ray, xform, invtrans);
@@ -111,8 +116,8 @@ kernel void render(write_only image2d_t fb,
 
 	while(iter++ < rinf->max_iter && mean(energy) > MIN_ENERGY) {
 		struct SurfPoint sp;
-		if(find_intersection(ray, &scn, &sp)) {
-			pixel += shade(ray, &scn, &sp) * energy;
+		if(find_intersection(ray, &scn, &sp, kdtree_img)) {
+			pixel += shade(ray, &scn, &sp, kdtree_img) * energy;
 
 			float4 refl_col = sp.mat.ks * sp.mat.kr;
 
@@ -121,27 +126,25 @@ kernel void render(write_only image2d_t fb,
 
 			energy *= refl_col;
 		} else {
-			break;
+			energy = (float4)(0.0, 0.0, 0.0, 0.0);
 		}
 	}
 
-	int img_x = get_image_width(fb);
-
 	int2 coord;
-	coord.x = idx % img_x;
-	coord.y = idx / img_x;
+	coord.x = idx % rinf->xsz;
+	coord.y = idx / rinf->xsz;
 
 	write_imagef(fb, coord, pixel);
 }
 
-float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
+float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp, read_only image2d_t kdimg)
 {
 	float4 norm = sp->norm;
-	bool entering = true;
+	//bool entering = true;
 
 	if(dot(ray.dir, norm) >= 0.0) {
 		norm = -norm;
-		entering = false;
+		//entering = false;
 	}
 
 	float4 dcol = scn->ambient * sp->mat.kd;
@@ -154,16 +157,19 @@ float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
 		shadowray.origin = sp->pos;
 		shadowray.dir = ldir;
 
-		if(!find_intersection(shadowray, scn, 0)) {
+		if(!find_intersection(shadowray, scn, 0, kdimg)) {
 			ldir = normalize(ldir);
-			float4 vdir = -normalize(ray.dir);
+			float4 vdir = -ray.dir;
+			vdir.x = native_divide(vdir.x, RAY_MAG);
+			vdir.y = native_divide(vdir.y, RAY_MAG);
+			vdir.z = native_divide(vdir.z, RAY_MAG);
 			float4 vref = reflect(vdir, norm);
 
 			float diff = fmax(dot(ldir, norm), 0.0f);
-			dcol += sp->mat.kd * scn->lights[i].color * diff;
+			dcol += sp->mat.kd /* scn->lights[i].color*/ * diff;
 
-			float spec = powr(fmax(dot(ldir, vref), 0.0f), sp->mat.spow);
-			scol += sp->mat.ks * scn->lights[i].color * spec;
+			float spec = native_powr(fmax(dot(ldir, vref), 0.0f), sp->mat.spow);
+			scol += sp->mat.ks /* scn->lights[i].color*/ * spec;
 		}
 	}
 
@@ -171,7 +177,7 @@ float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp)
 }
 
 #define STACK_SIZE	64
-bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *spres)
+bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *spres, read_only image2d_t kdimg)
 {
 	struct SurfPoint sp0;
 	sp0.t = 1.0;
@@ -184,14 +190,15 @@ bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint
 	while(top > 0) {
 		int idx = idxstack[--top];	// remove this index from the stack and process it
 
-		global const struct KDNode *node = scn->kdtree + idx;
+		struct KDNode node;
+		read_kdnode(idx, &node, kdimg);
 
-		if(intersect_aabb(ray, node->aabb)) {
-			if(node->left == -1) {
+		if(intersect_aabb(ray, node.aabb)) {
+			if(node.left == -1) {
 				// leaf node... check each face in turn and update the nearest intersection as needed
-				for(int i=0; i<node->num_faces; i++) {
+				for(int i=0; i<node.num_faces; i++) {
 					struct SurfPoint spt;
-					int fidx = node->face_idx[i];
+					int fidx = node.face_idx[i];
 
 					if(intersect(ray, scn->faces + fidx, &spt) && spt.t < sp0.t) {
 						sp0 = spt;
@@ -199,8 +206,8 @@ bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint
 				}
 			} else {
 				// internal node... recurse to the children
-				idxstack[top++] = node->left;
-				idxstack[top++] = node->right;
+				idxstack[top++] = node.left;
+				idxstack[top++] = node.right;
 			}
 		}
 	}
@@ -232,7 +239,7 @@ bool intersect(struct Ray ray, global const struct Face *face, struct SurfPoint 
 	float4 vec = pt - origin;
 
 	float ndotvec = dot(norm, vec);
-	float t = ndotvec / ndotdir;
+	float t = native_divide(ndotvec, ndotdir);
 
 	if(t < EPSILON || t > 1.0) {
 		return false;
@@ -269,12 +276,12 @@ bool intersect_aabb(struct Ray ray, struct AABBox aabb)
 	};
 
 	int xsign = (int)(ray.dir.x < 0.0);
-	float invdirx = 1.0 / ray.dir.x;
+	float invdirx = native_recip(ray.dir.x);
 	float tmin = (bbox[xsign].x - ray.origin.x) * invdirx;
 	float tmax = (bbox[1 - xsign].x - ray.origin.x) * invdirx;
 
 	int ysign = (int)(ray.dir.y < 0.0);
-	float invdiry = 1.0 / ray.dir.y;
+	float invdiry = native_recip(ray.dir.y);
 	float tymin = (bbox[ysign].y - ray.origin.y) * invdiry;
 	float tymax = (bbox[1 - ysign].y - ray.origin.y) * invdiry;
 
@@ -286,7 +293,7 @@ bool intersect_aabb(struct Ray ray, struct AABBox aabb)
 	if(tymax < tmax) tmax = tymax;
 
 	int zsign = (int)(ray.dir.z < 0.0);
-	float invdirz = 1.0 / ray.dir.z;
+	float invdirz = native_recip(ray.dir.z);
 	float tzmin = (bbox[zsign].z - ray.origin.z) * invdirz;
 	float tzmax = (bbox[1 - zsign].z - ray.origin.z) * invdirz;
 
@@ -345,13 +352,42 @@ float4 calc_bary(float4 pt, global const struct Face *face, float4 norm)
 	float a1 = fabs(dot(x20, norm)) * 0.5;
 	float a2 = fabs(dot(x01, norm)) * 0.5;
 
-	bc.x = a0 / area;
-	bc.y = a1 / area;
-	bc.z = a2 / area;
+	bc.x = native_divide(a0, area);
+	bc.y = native_divide(a1, area);
+	bc.z = native_divide(a2, area);
 	return bc;
 }
 
 float mean(float4 v)
 {
 	return native_divide(v.x + v.y + v.z, 3.0);
+}
+
+
+const sampler_t kdsampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_NONE | CLK_FILTER_NEAREST;
+
+// read a KD-tree node from a texture scanline
+void read_kdnode(int idx, struct KDNode *node, read_only image2d_t kdimg)
+{
+	int2 tc;
+	tc.x = 0;
+	tc.y = idx;
+
+	node->aabb.min = read_imagef(kdimg, kdsampler, tc); tc.x++;
+	node->aabb.max = read_imagef(kdimg, kdsampler, tc);
+
+	tc.x = 2 + MAX_NODE_FACES / 4;
+	float4 pix = read_imagef(kdimg, kdsampler, tc);
+	node->num_faces = (int)pix.x;
+	node->left = (int)pix.y;
+	node->right = (int)pix.z;
+
+	tc.x = 2;
+	for(int i=0; i<node->num_faces; i+=4) {
+		float4 pix = read_imagef(kdimg, kdsampler, tc); tc.x++;
+		node->face_idx[i] = (int)pix.x;
+		node->face_idx[i + 1] = (int)pix.y;
+		node->face_idx[i + 2] = (int)pix.z;
+		node->face_idx[i + 3] = (int)pix.w;
+	}
 }

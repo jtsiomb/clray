@@ -34,6 +34,7 @@ static bool dbg_show_obj = true;
 static Scene scn;
 static unsigned int tex;
 
+
 int main(int argc, char **argv)
 {
 	glutInitWindowSize(800, 600);

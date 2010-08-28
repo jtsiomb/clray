@@ -39,6 +39,7 @@ struct Light {
 };
 
 static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg);
+static float *create_kdimage(const KDNodeGPU *kdtree, int num_nodes, int *xsz_ret, int *ysz_ret);
 
 static Face *faces;
 static Ray *prim_rays;
@@ -51,6 +52,9 @@ static Light lightlist[] = {
 
 
 static RendInfo rinf;
+
+static long timing_sample_sum;
+static long num_timing_samples;
 
 
 bool init_renderer(int xsz, int ysz, Scene *scn, unsigned int tex)
@@ -91,7 +95,9 @@ bool init_renderer(int xsz, int ysz, Scene *scn, unsigned int tex)
 		fprintf(stderr, "failed to create kdtree buffer\n");
 		return false;
 	}
-	// XXX now we can actually destroy the original kdtree and keep only the GPU version
+
+	int kdimg_xsz, kdimg_ysz;
+	float *kdimg_pixels = create_kdimage(kdbuf, scn->get_num_kdnodes(), &kdimg_xsz, &kdimg_ysz);
 
 	/* setup argument buffers */
 #ifdef CLGL_INTEROP
@@ -106,7 +112,11 @@ bool init_renderer(int xsz, int ysz, Scene *scn, unsigned int tex)
 	prog->set_arg_buffer(KARG_PRIM_RAYS, ARG_RD, xsz * ysz * sizeof *prim_rays, prim_rays);
 	prog->set_arg_buffer(KARG_XFORM, ARG_RD, 16 * sizeof(float));
 	prog->set_arg_buffer(KARG_INVTRANS_XFORM, ARG_RD, 16 * sizeof(float));
-	prog->set_arg_buffer(KARG_KDTREE, ARG_RD, scn->get_num_kdnodes() * sizeof *kdbuf, kdbuf);
+	//prog->set_arg_buffer(KARG_KDTREE, ARG_RD, scn->get_num_kdnodes() * sizeof *kdbuf, kdbuf);
+	prog->set_arg_image(KARG_KDTREE, ARG_RD, kdimg_xsz, kdimg_ysz, kdimg_pixels);
+
+	delete [] kdimg_pixels;
+
 
 	if(prog->get_num_args() < NUM_KERNEL_ARGS) {
 		return false;
@@ -125,6 +135,8 @@ bool init_renderer(int xsz, int ysz, Scene *scn, unsigned int tex)
 void destroy_renderer()
 {
 	delete prog;
+
+	printf("rendertime mean: %ld msec\n", timing_sample_sum / num_timing_samples);
 }
 
 bool render()
@@ -172,7 +184,11 @@ bool render()
 	unmap_mem_buffer(mbuf);
 #endif
 
-	printf("rendered in %ld msec\n", get_msec() - tm0);
+	long msec = get_msec() - tm0;
+	timing_sample_sum += msec;
+	num_timing_samples++;
+
+	printf("rendered in %ld msec\n", msec);
 	return true;
 }
 
@@ -273,10 +289,61 @@ static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg)
 	float py = 1.0 - ((float)y / (float)h) * ysz;
 	float pz = 1.0 / tan(0.5 * vfov);
 
-	px *= 100.0;
-	py *= 100.0;
-	pz *= 100.0;
+	float mag = sqrt(px * px + py * py + pz * pz);
+
+	px = px * 500.0 / mag;
+	py = py * 500.0 / mag;
+	pz = pz * 500.0 / mag;
 
 	Ray ray = {{0, 0, 0, 1}, {px, py, -pz, 1}};
 	return ray;
+}
+
+static int next_pow2(int x)
+{
+	x--;
+	x = (x >> 1) | x;
+	x = (x >> 2) | x;
+	x = (x >> 4) | x;
+	x = (x >> 8) | x;
+	x = (x >> 16) | x;
+	return x + 1;
+}
+
+static float *create_kdimage(const KDNodeGPU *kdtree, int num_nodes, int *xsz_ret, int *ysz_ret)
+{
+	int xsz = 16;
+	int ysz = next_pow2(num_nodes);
+
+	printf("creating kdtree image %dx%d (%d nodes)\n", xsz, ysz, num_nodes);
+
+	float *img = new float[4 * xsz * ysz];
+	memset(img, 0, 4 * xsz * ysz * sizeof *img);
+
+	for(int i=0; i<num_nodes; i++) {
+		float *ptr = img + i * 4 * xsz;
+
+		*ptr++ = kdtree[i].aabb.min[0];
+		*ptr++ = kdtree[i].aabb.min[1];
+		*ptr++ = kdtree[i].aabb.min[2];
+		*ptr++ = 0.0;
+
+		*ptr++ = kdtree[i].aabb.max[0];
+		*ptr++ = kdtree[i].aabb.max[1];
+		*ptr++ = kdtree[i].aabb.max[2];
+		*ptr++ = 0.0;
+
+		for(int j=0; j<MAX_NODE_FACES; j++) {
+			*ptr++ = j < kdtree[i].num_faces ? (float)kdtree[i].face_idx[j] : 0.0f;
+		}
+
+		*ptr++ = (float)kdtree[i].num_faces;
+		*ptr++ = (float)kdtree[i].left;
+		*ptr++ = (float)kdtree[i].right;
+		*ptr++ = 0.0;
+	}
+
+	if(xsz_ret) *xsz_ret = xsz;
+	if(ysz_ret) *ysz_ret = ysz;
+	return img;
 }
