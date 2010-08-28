@@ -24,8 +24,8 @@ static void print_item_counts(const KDNode *node, int level);
 
 
 static int accel_param[NUM_ACCEL_PARAMS] = {
-	40,	// max tree depth
-	0,	// max items per node (0 means ignore limit)
+	64,	// max tree depth
+	MAX_NODE_FACES,	// max items per node (0 means ignore limit)
 	5,	// estimated traversal cost
 	15	// estimated interseciton cost
 };
