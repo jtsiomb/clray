@@ -71,6 +71,10 @@ int main(int argc, char **argv)
 				set_accel_param(ACCEL_PARAM_MAX_NODE_ITEMS, atoi(argv[i]));
 				break;
 
+			case 'd':
+				dbg_glrender = true;
+				break;
+
 			default:
 				fprintf(stderr, "unrecognized option: %s\n", argv[i]);
 				return 1;
