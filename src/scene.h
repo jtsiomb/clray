@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <vector>
 #include <list>
+#include "common.h"
 
 struct Vertex {
 	float pos[4];
@@ -51,7 +52,6 @@ struct KDNode {
 	KDNode();
 };
 
-#define MAX_NODE_FACES	32
 struct KDNodeGPU {
 	AABBox aabb;
 	int face_idx[MAX_NODE_FACES];

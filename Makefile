@@ -3,15 +3,18 @@ obj = $(src:.cc=.o)
 dep = $(obj:.o=.d)
 bin = test
 
+opt = -O3 -ffast-math
+dbg = -g
+
 CXX = g++
-CXXFLAGS = -pedantic -Wall -g $(def)
+CXXFLAGS = -pedantic -Wall $(dbg) $(opt) $(def)
 LDFLAGS = $(libgl) $(libcl) -lpthread
 
 ifeq ($(shell uname -s), Darwin)
 	libgl = -framework OpenGL -framework GLUT
 	libcl = -framework OpenCL
 else
-	libgl = -lGL -lglut
+	libgl = -lGL -lGLU -lglut
 	libcl = -lOpenCL
 	def = -DCLGL_INTEROP
 endif

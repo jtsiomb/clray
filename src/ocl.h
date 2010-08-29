@@ -103,7 +103,7 @@ public:
 	CLMemBuffer *get_arg_buffer(int arg);
 	int get_num_args() const;
 
-	bool build();
+	bool build(const char *opt = 0);
 
 	bool run() const;
 	bool run(int dim, ...) const;

@@ -6,6 +6,7 @@
 #include "ocl.h"
 #include "scene.h"
 #include "timer.h"
+#include "common.h"
 
 // kernel arguments
 enum {
@@ -122,7 +123,8 @@ bool init_renderer(int xsz, int ysz, Scene *scn, unsigned int tex)
 		return false;
 	}
 
-	if(!prog->build()) {
+	const char *opt = "-Isrc -cl-mad-enable -cl-single-precision-constant -cl-fast-relaxed-math";
+	if(!prog->build(opt)) {
 		return false;
 	}
 
@@ -291,29 +293,19 @@ static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg)
 
 	float mag = sqrt(px * px + py * py + pz * pz);
 
-	px = px * 500.0 / mag;
-	py = py * 500.0 / mag;
-	pz = pz * 500.0 / mag;
+	px = px * RAY_MAG / mag;
+	py = py * RAY_MAG / mag;
+	pz = pz * RAY_MAG / mag;
 
 	Ray ray = {{0, 0, 0, 1}, {px, py, -pz, 1}};
 	return ray;
 }
 
-static int next_pow2(int x)
-{
-	x--;
-	x = (x >> 1) | x;
-	x = (x >> 2) | x;
-	x = (x >> 4) | x;
-	x = (x >> 8) | x;
-	x = (x >> 16) | x;
-	return x + 1;
-}
-
 static float *create_kdimage(const KDNodeGPU *kdtree, int num_nodes, int *xsz_ret, int *ysz_ret)
 {
-	int xsz = 16;
-	int ysz = next_pow2(num_nodes);
+	int ysz = MIN(num_nodes, KDIMG_MAX_HEIGHT);
+	int columns = (num_nodes - 1) / KDIMG_MAX_HEIGHT + 1;
+	int xsz = KDIMG_NODE_WIDTH * columns;
 
 	printf("creating kdtree image %dx%d (%d nodes)\n", xsz, ysz, num_nodes);
 
@@ -321,7 +313,10 @@ static float *create_kdimage(const KDNodeGPU *kdtree, int num_nodes, int *xsz_re
 	memset(img, 0, 4 * xsz * ysz * sizeof *img);
 
 	for(int i=0; i<num_nodes; i++) {
-		float *ptr = img + i * 4 * xsz;
+		int x = KDIMG_NODE_WIDTH * (i / KDIMG_MAX_HEIGHT);
+		int y = i % KDIMG_MAX_HEIGHT;
+
+		float *ptr = img + (y * xsz + x) * 4;
 
 		*ptr++ = kdtree[i].aabb.min[0];
 		*ptr++ = kdtree[i].aabb.min[1];

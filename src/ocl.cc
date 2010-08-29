@@ -61,8 +61,6 @@ bool init_opencl()
 		return false;
 	}
 
-
-
 #ifndef CLGL_INTEROP
 	cl_context_properties *prop = 0;
 #else
@@ -499,12 +497,9 @@ int CLProgram::get_num_args() const
 	return num_args;
 }
 
-bool CLProgram::build()
+bool CLProgram::build(const char *opt)
 {
 	int err;
-
-	const char *opt = "-cl-mad-enable -cl-single-precision-constant -cl-fast-relaxed-math";
-
 	if((err = clBuildProgram(prog, 0, 0, opt, 0, 0)) != 0) {
 		size_t sz;
 		clGetProgramBuildInfo(prog, devinf.id, CL_PROGRAM_BUILD_LOG, 0, 0, &sz);

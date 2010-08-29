@@ -1,4 +1,5 @@
 /* vim: set ft=opencl:ts=4:sw=4 */
+#include "common.h"
 
 struct RendInfo {
 	float4 ambient;
@@ -58,7 +59,6 @@ struct AABBox {
 	float4 min, max;
 };
 
-#define MAX_NODE_FACES	32
 struct KDNode {
 	struct AABBox aabb;
 	int face_idx[MAX_NODE_FACES];
@@ -67,7 +67,6 @@ struct KDNode {
 	int padding;
 };
 
-#define RAY_MAG		500.0
 #define MIN_ENERGY	0.001
 #define EPSILON		1e-5
 
@@ -176,7 +175,7 @@ float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp, read
 	return dcol + scol;
 }
 
-#define STACK_SIZE	64
+#define STACK_SIZE	MAX_TREE_DEPTH
 bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *spres, read_only image2d_t kdimg)
 {
 	struct SurfPoint sp0;
@@ -369,20 +368,22 @@ const sampler_t kdsampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_NONE | CLK
 // read a KD-tree node from a texture scanline
 void read_kdnode(int idx, struct KDNode *node, read_only image2d_t kdimg)
 {
+	int startx = KDIMG_NODE_WIDTH * (idx / KDIMG_MAX_HEIGHT);
+
 	int2 tc;
-	tc.x = 0;
-	tc.y = idx;
+	tc.x = startx;
+	tc.y = idx % KDIMG_MAX_HEIGHT;
 
 	node->aabb.min = read_imagef(kdimg, kdsampler, tc); tc.x++;
 	node->aabb.max = read_imagef(kdimg, kdsampler, tc);
 
-	tc.x = 2 + MAX_NODE_FACES / 4;
+	tc.x = startx + 2 + MAX_NODE_FACES / 4;
 	float4 pix = read_imagef(kdimg, kdsampler, tc);
 	node->num_faces = (int)pix.x;
 	node->left = (int)pix.y;
 	node->right = (int)pix.z;
 
-	tc.x = 2;
+	tc.x = startx + 2;
 	for(int i=0; i<node->num_faces; i+=4) {
 		float4 pix = read_imagef(kdimg, kdsampler, tc); tc.x++;
 		node->face_idx[i] = (int)pix.x;
