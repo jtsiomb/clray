@@ -36,10 +36,10 @@ static float cam_dist = 10.0;
 static bool dbg_glrender = false;
 static bool dbg_show_kdtree = false;
 static bool dbg_show_obj = true;
+bool dbg_frame_time = true;
 
 static Scene scn;
 static unsigned int tex;
-
 
 int main(int argc, char **argv)
 {
@@ -316,6 +316,10 @@ void keyb(unsigned char key, int x, int y)
 
 	case '`':
 		capture("shot%03d.ppm");
+		break;
+
+	case 't':
+		dbg_frame_time = !dbg_frame_time;
 		break;
 
 	default:

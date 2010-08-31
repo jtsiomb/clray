@@ -60,6 +60,8 @@ static int saved_iter_val;
 static long timing_sample_sum;
 static long num_timing_samples;
 
+extern bool dbg_frame_time;
+
 
 bool init_renderer(int xsz, int ysz, Scene *scn, unsigned int tex)
 {
@@ -193,7 +195,9 @@ bool render()
 	timing_sample_sum += msec;
 	num_timing_samples++;
 
-	printf("rendered in %ld msec\n", msec);
+	if(dbg_frame_time) {
+		printf("rendered in %ld msec\n", msec);
+	}
 	return true;
 }
 
