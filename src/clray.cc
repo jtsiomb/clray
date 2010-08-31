@@ -12,6 +12,11 @@
 #include "matrix.h"
 #include "scene.h"
 #include "ocl.h"
+#include "ogl.h"
+
+#ifdef _MSC_VER
+#define snprintf	_snprintf
+#endif
 
 void cleanup();
 void disp();

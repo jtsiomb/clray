@@ -16,4 +16,9 @@
 #endif
 
 
+#ifndef GL_RGBA32F_ARB
+#define GL_RGBA32F_ARB	0x8814
+#endif
+
+
 #endif	/* OGL_H_ */
