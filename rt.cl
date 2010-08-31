@@ -6,7 +6,7 @@ struct RendInfo {
 	int xsz, ysz;
 	int num_faces, num_lights;
 	int max_iter;
-	int kd_depth;
+	int cast_shadows;
 };
 
 struct Vertex {
@@ -53,6 +53,7 @@ struct Scene {
 	int num_lights;
 	global const struct Material *matlib;
 	//global const struct KDNode *kdtree;
+	bool cast_shadows;
 };
 
 struct AABBox {
@@ -104,7 +105,7 @@ kernel void render(write_only image2d_t fb,
 	scn.lights = lights;
 	scn.num_lights = rinf->num_lights;
 	scn.matlib = matlib;
-	//scn.kdtree_img = kdtree_img;
+	scn.cast_shadows = rinf->cast_shadows;
 
 	struct Ray ray = primrays[idx];
 	transform_ray(&ray, xform, invtrans);
@@ -113,7 +114,7 @@ kernel void render(write_only image2d_t fb,
 	float4 energy = (float4)(1.0, 1.0, 1.0, 0.0);
 	int iter = 0;
 
-	while(iter++ < rinf->max_iter && mean(energy) > MIN_ENERGY) {
+	while(iter++ <= rinf->max_iter && mean(energy) > MIN_ENERGY) {
 		struct SurfPoint sp;
 		if(find_intersection(ray, &scn, &sp, kdtree_img)) {
 			pixel += shade(ray, &scn, &sp, kdtree_img) * energy;
@@ -156,7 +157,7 @@ float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp, read
 		shadowray.origin = sp->pos;
 		shadowray.dir = ldir;
 
-		if(!find_intersection(shadowray, scn, 0, kdimg)) {
+		if(!scn->cast_shadows || !find_intersection(shadowray, scn, 0, kdimg)) {
 			ldir = normalize(ldir);
 			float4 vdir = -ray.dir;
 			vdir.x = native_divide(vdir.x, RAY_MAG);

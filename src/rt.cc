@@ -2,6 +2,7 @@
 #include <string.h>
 #include <math.h>
 #include <assert.h>
+#include "rt.h"
 #include "ogl.h"
 #include "ocl.h"
 #include "scene.h"
@@ -28,7 +29,7 @@ struct RendInfo {
 	int xsz, ysz;
 	int num_faces, num_lights;
 	int max_iter;
-	int kd_depth;
+	int cast_shadows;
 };
 
 struct Ray {
@@ -39,6 +40,7 @@ struct Light {
 	float pos[4], color[4];
 };
 
+static void update_render_info();
 static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg);
 static float *create_kdimage(const KDNodeGPU *kdtree, int num_nodes, int *xsz_ret, int *ysz_ret);
 
@@ -53,6 +55,7 @@ static Light lightlist[] = {
 
 
 static RendInfo rinf;
+static int saved_iter_val;
 
 static long timing_sample_sum;
 static long num_timing_samples;
@@ -68,8 +71,8 @@ bool init_renderer(int xsz, int ysz, Scene *scn, unsigned int tex)
 	rinf.ysz = ysz;
 	rinf.num_faces = scn->get_num_faces();
 	rinf.num_lights = sizeof lightlist / sizeof *lightlist;
-	rinf.max_iter = 6;
-	rinf.kd_depth = kdtree_depth(scn->kdtree);
+	rinf.max_iter = saved_iter_val = 6;
+	rinf.cast_shadows = true;
 
 	/* calculate primary rays */
 	prim_rays = new Ray[xsz * ysz];
@@ -277,6 +280,101 @@ void set_xform(float *matrix, float *invtrans)
 	mem = (float*)map_mem_buffer(mbuf_invtrans, MAP_WR);
 	memcpy(mem, invtrans, 16 * sizeof *mem);
 	unmap_mem_buffer(mbuf_invtrans);
+}
+
+void set_render_option(int opt, bool val)
+{
+	switch(opt) {
+	case ROPT_ITER:
+	case ROPT_REFL:
+		rinf.max_iter = val ? saved_iter_val : 0;
+		break;
+
+	case ROPT_SHAD:
+		rinf.cast_shadows = val;
+		break;
+
+	default:
+		return;
+	}
+
+	update_render_info();
+}
+
+void set_render_option(int opt, int val)
+{
+	switch(opt) {
+	case ROPT_ITER:
+		rinf.max_iter = saved_iter_val = val;
+		break;
+
+	case ROPT_SHAD:
+		rinf.cast_shadows = val;
+		break;
+
+	case ROPT_REFL:
+		rinf.max_iter = val ? saved_iter_val : 0;
+		break;
+
+	default:
+		return;
+	}
+
+	update_render_info();
+}
+
+void set_render_option(int opt, float val)
+{
+	set_render_option(opt, (int)val);
+}
+
+bool get_render_option_bool(int opt)
+{
+	switch(opt) {
+	case ROPT_ITER:
+		return rinf.max_iter;
+	case ROPT_SHAD:
+		return rinf.cast_shadows;
+	case ROPT_REFL:
+		return rinf.max_iter == saved_iter_val;
+	default:
+		break;
+	}
+	return false;
+}
+
+int get_render_option_int(int opt)
+{
+	switch(opt) {
+	case ROPT_ITER:
+		return rinf.max_iter;
+	case ROPT_SHAD:
+		return rinf.cast_shadows ? 1 : 0;
+	case ROPT_REFL:
+		return rinf.max_iter == saved_iter_val ? 1 : 0;
+	default:
+		break;
+	}
+	return -1;
+}
+
+float get_render_option_float(int opt)
+{
+	return (float)get_render_option_int(opt);
+}
+
+static void update_render_info()
+{
+	if(!prog) {
+		return;
+	}
+
+	CLMemBuffer *mbuf = prog->get_arg_buffer(KARG_RENDER_INFO);
+	assert(mbuf);
+
+	RendInfo *rinf_ptr = (RendInfo*)map_mem_buffer(mbuf, MAP_WR);
+	*rinf_ptr = rinf;
+	unmap_mem_buffer(mbuf);
 }
 
 static Ray get_primary_ray(int x, int y, int w, int h, float vfov_deg)

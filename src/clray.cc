@@ -19,6 +19,7 @@ void reshape(int x, int y);
 void keyb(unsigned char key, int x, int y);
 void mouse(int bn, int status, int x, int y);
 void motion(int x, int y);
+bool capture(const char *namefmt);
 bool write_ppm(const char *fname, float *fb, int xsz, int ysz);
 
 static int xsz, ysz;
@@ -218,15 +219,26 @@ void reshape(int x, int y)
 	set_framebuffer(fb, x, y);*/
 }
 
+void idle()
+{
+	need_update = true;
+	glutPostRedisplay();
+}
+
 void keyb(unsigned char key, int x, int y)
 {
 	switch(key) {
 	case 27:
 		exit(0);
 
-	case 'r':
-		need_update = true;
-		glutPostRedisplay();
+	case '\b':
+		{
+			static bool busyloop;
+
+			busyloop = !busyloop;
+			printf("%s busy-looping\n", busyloop ? "WARNING: enabling" : "disabling");
+			glutIdleFunc(busyloop ? idle : 0);
+		}
 		break;
 
 	case 'd':
@@ -251,6 +263,54 @@ void keyb(unsigned char key, int x, int y)
 		if(dbg_glrender) {
 			glutPostRedisplay();
 		}
+		break;
+
+	case 's':
+		{
+			bool shadows = get_render_option_bool(ROPT_SHAD);
+			shadows = !shadows;
+			printf("%s shadows\n", shadows ? "enabling" : "disabling");
+			set_render_option(ROPT_SHAD, shadows);
+			need_update = true;
+			glutPostRedisplay();
+		}
+		break;
+
+	case 'r':
+		{
+			bool refl = get_render_option_bool(ROPT_REFL);
+			refl = !refl;
+			printf("%s reflections\n", refl ? "enabling" : "disabling");
+			set_render_option(ROPT_REFL, refl);
+			need_update = true;
+			glutPostRedisplay();
+		}
+		break;
+
+	case ']':
+		{
+			int iter = get_render_option_int(ROPT_ITER);
+			printf("setting max iterations: %d\n", iter + 1);
+			set_render_option(ROPT_ITER, iter + 1);
+			need_update = true;
+			glutPostRedisplay();
+		}
+		break;
+
+	case '[':
+		{
+			int iter = get_render_option_int(ROPT_ITER);
+			if(iter-- > 0) {
+				printf("setting max iterations: %d\n", iter);
+				set_render_option(ROPT_ITER, iter);
+				need_update = true;
+				glutPostRedisplay();
+			}
+		}
+		break;
+
+	case '`':
+		capture("shot%03d.ppm");
 		break;
 
 	default:
@@ -299,6 +359,26 @@ void motion(int x, int y)
 		need_update = true;
 		glutPostRedisplay();
 	}
+}
+
+bool capture(const char *namefmt)
+{
+	static int num;
+	char fname[256];
+
+	num++;
+	snprintf(fname, sizeof fname, namefmt, num);
+	printf("saving image %s\n", fname);
+
+	float *pixels = new float[4 * xsz * ysz];
+	glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, pixels);
+
+	bool res = write_ppm("shot.ppm", pixels, xsz, ysz);
+	if(!res) {
+		num--;
+	}
+	delete [] pixels;
+	return res;
 }
 
 bool write_ppm(const char *fname, float *fb, int xsz, int ysz)
