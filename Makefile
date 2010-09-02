@@ -1,7 +1,7 @@
 src = $(wildcard src/*.cc)
 obj = $(src:.cc=.o)
 dep = $(obj:.o=.d)
-bin = test
+bin = clray
 
 opt = -O3 -ffast-math
 dbg = -g
