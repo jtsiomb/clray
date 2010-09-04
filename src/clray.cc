@@ -382,7 +382,7 @@ bool capture(const char *namefmt)
 	float *pixels = new float[4 * xsz * ysz];
 	glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, pixels);
 
-	bool res = write_ppm("shot.ppm", pixels, xsz, ysz);
+	bool res = write_ppm(fname, pixels, xsz, ysz);
 	if(!res) {
 		num--;
 	}
