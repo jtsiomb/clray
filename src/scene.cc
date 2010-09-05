@@ -14,8 +14,7 @@
 #define MAX(a, b)	((a) > (b) ? (a) : (b))
 
 
-static void flatten_kdtree(const KDNode *node, KDNodeGPU *kdbuf, int *count, std::map<const KDNode*, int> *flatmap);
-static void fix_child_links(const KDNode *node, KDNodeGPU *kdbuf, const std::map<const KDNode*, int> &flatmap);
+static int flatten_kdtree(const KDNode *node, KDNodeGPU *kdbuf, int *count);
 static void draw_kdtree(const KDNode *node, int level = 0);
 static bool build_kdtree(KDNode *kd, const Face *faces, int level = 0);
 static float eval_cost(const Face *faces, const int *face_idx, int num_faces, const AABBox &aabb, int axis);
@@ -174,27 +173,6 @@ const Face *Scene::get_face_buffer() const
 	return facebuf;
 }
 
-static int find_node_index(const KDNode *node, const std::map<const KDNode*, int> &flatmap);
-
-static bool validate_flat_tree(const KDNode *node, const KDNodeGPU *kdbuf, int count, const std::map<const KDNode*, int> &flatmap)
-{
-	if(!node) return true;
-
-	int idx = find_node_index(node, flatmap);
-	int left_idx = find_node_index(node->left, flatmap);
-	int right_idx = find_node_index(node->right, flatmap);
-
-	if(kdbuf[idx].left != left_idx) {
-		fprintf(stderr, "%d's left should be %d. it's: %d\n", idx, left_idx, kdbuf[idx].left);
-		return false;
-	}
-	if(kdbuf[idx].right != right_idx) {
-		fprintf(stderr, "%d's right should be %d. it's: %d\n", idx, right_idx, kdbuf[idx].right);
-		return false;
-	}
-	return validate_flat_tree(node->left, kdbuf, count, flatmap) && validate_flat_tree(node->right, kdbuf, count, flatmap);
-}
-
 const KDNodeGPU *Scene::get_kdtree_buffer() const
 {
 	if(kdbuf) {
@@ -205,30 +183,18 @@ const KDNodeGPU *Scene::get_kdtree_buffer() const
 		((Scene*)this)->build_kdtree();
 	}
 
-	/* we'll associate kdnodes with flattened array indices through this map as
-	 * we add them so that the second child-index pass, will be able to find
-	 * the children indices of each node.
-	 */
-	std::map<const KDNode*, int> flatmap;
-	flatmap[0] = -1;
-
 	int num_nodes = get_num_kdnodes();
 	kdbuf = new KDNodeGPU[num_nodes];
 
 	int count = 0;
 
 	// first arrange the kdnodes into an array (flatten)
-	flatten_kdtree(kdtree, kdbuf, &count, &flatmap);
-
-	// then fix all the left/right links to point to the correct nodes
-	fix_child_links(kdtree, kdbuf, flatmap);
-
-	assert(validate_flat_tree(kdtree, kdbuf, count, flatmap));
+	flatten_kdtree(kdtree, kdbuf, &count);
 
 	return kdbuf;
 }
 
-static void flatten_kdtree(const KDNode *node, KDNodeGPU *kdbuf, int *count, std::map<const KDNode*, int> *flatmap)
+static int flatten_kdtree(const KDNode *node, KDNodeGPU *kdbuf, int *count)
 {
 	const size_t max_node_items = sizeof kdbuf[0].face_idx / sizeof kdbuf[0].face_idx[0];
 	int idx = (*count)++;
@@ -246,38 +212,17 @@ static void flatten_kdtree(const KDNode *node, KDNodeGPU *kdbuf, int *count, std
 		kdbuf[idx].num_faces++;
 	}
 
-	// update the node* -> array-position mapping
-	(*flatmap)[node] = idx;
-
 	// recurse to the left/right (if we're not in a leaf node)
 	if(node->left) {
 		assert(node->right);
 
-		flatten_kdtree(node->left, kdbuf, count, flatmap);
-		flatten_kdtree(node->right, kdbuf, count, flatmap);
+		kdbuf[idx].left = flatten_kdtree(node->left, kdbuf, count);
+		kdbuf[idx].right = flatten_kdtree(node->right, kdbuf, count);
+	} else {
+		kdbuf[idx].left = kdbuf[idx].right = -1;
 	}
-}
 
-static int find_node_index(const KDNode *node, const std::map<const KDNode*, int> &flatmap)
-{
-	std::map<const KDNode*, int>::const_iterator it = flatmap.find(node);
-	assert(it != flatmap.end());
-	return it->second;
-}
-
-static void fix_child_links(const KDNode *node, KDNodeGPU *kdbuf, const std::map<const KDNode*, int> &flatmap)
-{
-	if(!node) return;
-
-	int idx = find_node_index(node, flatmap);
-
-	kdbuf[idx].left = find_node_index(node->left, flatmap);
-	if(!node->left && kdbuf[idx].left != -1) abort();
-	kdbuf[idx].right = find_node_index(node->right, flatmap);
-	if(!node->right && kdbuf[idx].right != -1) abort();
-
-	fix_child_links(node->left, kdbuf, flatmap);
-	fix_child_links(node->right, kdbuf, flatmap);
+	return idx;
 }
 
 void Scene::draw_kdtree() const
@@ -339,48 +284,6 @@ static void draw_kdtree(const KDNode *node, int level)
 	glVertex3fv(node->aabb.max);
 	glVertex3f(node->aabb.min[0], node->aabb.max[1], node->aabb.min[2]);
 	glVertex3f(node->aabb.min[0], node->aabb.max[1], node->aabb.max[2]);
-	/*if(!node->left) return;
-
-	AABBox *bleft = &node->left->aabb;
-
-	int axis = level % 3;
-	switch(axis) {
-	case 0:
-		glVertex3f(bleft->max[0], bleft->min[1], bleft->min[2]);
-		glVertex3f(bleft->max[0], bleft->max[1], bleft->min[2]);
-		glVertex3f(bleft->max[0], bleft->max[1], bleft->min[2]);
-		glVertex3f(bleft->max[0], bleft->max[1], bleft->max[2]);
-		glVertex3f(bleft->max[0], bleft->max[1], bleft->max[2]);
-		glVertex3f(bleft->max[0], bleft->min[1], bleft->max[2]);
-		glVertex3f(bleft->max[0], bleft->min[1], bleft->max[2]);
-		glVertex3f(bleft->max[0], bleft->min[1], bleft->min[2]);
-		break;
-
-	case 1:
-		glVertex3f(bleft->min[0], bleft->min[1], bleft->max[2]);
-		glVertex3f(bleft->min[0], bleft->max[1], bleft->max[2]);
-		glVertex3f(bleft->min[0], bleft->max[1], bleft->max[2]);
-		glVertex3f(bleft->max[0], bleft->max[1], bleft->max[2]);
-		glVertex3f(bleft->max[0], bleft->max[1], bleft->max[2]);
-		glVertex3f(bleft->max[0], bleft->min[1], bleft->max[2]);
-		glVertex3f(bleft->max[0], bleft->min[1], bleft->max[2]);
-		glVertex3f(bleft->min[0], bleft->min[1], bleft->max[2]);
-		break;
-
-	case 2:
-		glVertex3f(bleft->min[0], bleft->max[1], bleft->min[2]);
-		glVertex3f(bleft->max[0], bleft->max[1], bleft->min[2]);
-		glVertex3f(bleft->max[0], bleft->max[1], bleft->min[2]);
-		glVertex3f(bleft->max[0], bleft->max[1], bleft->max[2]);
-		glVertex3f(bleft->max[0], bleft->max[1], bleft->max[2]);
-		glVertex3f(bleft->min[0], bleft->max[1], bleft->max[2]);
-		glVertex3f(bleft->min[0], bleft->max[1], bleft->max[2]);
-		glVertex3f(bleft->min[0], bleft->max[1], bleft->min[2]);
-		break;
-
-	default:
-		break;
-	}*/
 }
 
 bool Scene::build_kdtree()
