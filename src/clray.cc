@@ -212,6 +212,11 @@ void disp()
 	}
 
 	glutSwapBuffers();
+
+	/* We need to make sure OpenGL has finished with the texture
+	 * before allowing the OpenCL kernel to run again.
+	 */
+	glFinish();
 }
 
 void reshape(int x, int y)
