@@ -18,6 +18,13 @@ Vector3::Vector3(float x, float y, float z)
 	this->z = z;
 }
 
+Vector3::Vector3(const float *arr)
+{
+	x = arr[0];
+	y = arr[1];
+	z = arr[2];
+}
+
 void Vector3::normalize()
 {
 	float len = sqrt(x * x + y * y + z * z);

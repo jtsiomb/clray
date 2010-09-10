@@ -33,13 +33,20 @@ static bool need_update = true;
 static float cam_theta, cam_phi = 25.0;
 static float cam_dist = 10.0;
 
-static bool dbg_glrender = false;
-static bool dbg_show_kdtree = false;
+static bool dbg_glrender;
+static bool dbg_nocl;
+static bool dbg_show_kdtree;
 static bool dbg_show_obj = true;
 bool dbg_frame_time = true;
 
 static Scene scn;
 static unsigned int tex;
+
+static Light lightlist[] = {
+	{{-8, 15, 18, 0}, {1, 1, 1, 1}}
+};
+
+
 
 int main(int argc, char **argv)
 {
@@ -81,6 +88,10 @@ int main(int argc, char **argv)
 				dbg_glrender = true;
 				break;
 
+			case 'n':
+				dbg_nocl = true;
+				break;
+
 			default:
 				fprintf(stderr, "unrecognized option: %s\n", argv[i]);
 				return 1;
@@ -101,6 +112,11 @@ int main(int argc, char **argv)
 	if(!scn.get_num_faces()) {
 		fprintf(stderr, "didn't load any polygons\n");
 		return false;
+	}
+
+	int num_lights = sizeof lightlist / sizeof *lightlist;
+	for(int i=0; i<num_lights; i++) {
+		scn.add_light(lightlist[i]);
 	}
 
 	glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE);
@@ -171,11 +187,6 @@ void disp()
 
 		glGetFloatv(GL_MODELVIEW_MATRIX, mat.m);
 
-		inv_mat = mat;
-		inv_mat.invert();
-
-		/*inv_trans = inv_mat;
-		inv_trans.transpose();*/
 		inv_trans = mat;
 		inv_trans.m[3] = inv_trans.m[7] = inv_trans.m[11] = 0.0;
 		inv_trans.m[12] = inv_trans.m[13] = inv_trans.m[14] = 0.0;
@@ -185,14 +196,21 @@ void disp()
 		glPopMatrix();
 
 		if(!dbg_glrender) {
-			if(!render()) {
-				exit(1);
+			if(dbg_nocl) {
+				dbg_render(mat.m, inv_trans.m);
+			} else {
+				if(!render()) {
+					exit(1);
+				}
 			}
 			need_update = false;
 		}
 	}
 
 	if(dbg_glrender) {
+		inv_mat = mat;
+		inv_mat.invert();
+
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glLoadMatrixf(inv_mat.m);
 		dbg_render_gl(&scn, dbg_show_kdtree, dbg_show_obj);
@@ -320,6 +338,13 @@ void keyb(unsigned char key, int x, int y)
 
 	case 't':
 		dbg_frame_time = !dbg_frame_time;
+		break;
+
+	case 'n':
+		dbg_nocl = !dbg_nocl;
+		printf("switching to %s rendering\n", dbg_nocl ? "debug CPU" : "OpenCL");
+		need_update = true;
+		glutPostRedisplay();
 		break;
 
 	default:

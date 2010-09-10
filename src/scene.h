@@ -34,6 +34,10 @@ struct Mesh {
 	int matid;
 };
 
+struct Light {
+	float pos[4], color[4];
+};
+
 class AABBox {
 public:
 	float min[4], max[4];
@@ -70,6 +74,7 @@ private:
 
 public:
 	std::vector<Mesh*> meshes;
+	std::vector<Light> lights;
 	std::vector<Material> matlib;
 	KDNode *kdtree;
 
@@ -77,10 +82,19 @@ public:
 	~Scene();
 
 	bool add_mesh(Mesh *m);
+	bool add_light(const Light &lt);
+
 	int get_num_meshes() const;
+	int get_num_lights() const;
 	int get_num_faces() const;
 	int get_num_materials() const;
 	int get_num_kdnodes() const;
+
+	Mesh **get_meshes();
+	const Mesh * const *get_meshes() const;
+
+	Light *get_lights();
+	const Light *get_lights() const;
 
 	Material *get_materials();
 	const Material *get_materials() const;

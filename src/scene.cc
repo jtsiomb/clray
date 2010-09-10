@@ -109,9 +109,25 @@ bool Scene::add_mesh(Mesh *m)
 	return true;
 }
 
+bool Scene::add_light(const Light &lt)
+{
+	try {
+		lights.push_back(lt);
+	}
+	catch(...) {
+		return false;
+	}
+	return true;
+}
+
 int Scene::get_num_meshes() const
 {
 	return (int)meshes.size();
+}
+
+int Scene::get_num_lights() const
+{
+	return (int)lights.size();
 }
 
 int Scene::get_num_faces() const
@@ -135,6 +151,38 @@ int Scene::get_num_materials() const
 int Scene::get_num_kdnodes() const
 {
 	return kdtree_nodes(kdtree);
+}
+
+Mesh **Scene::get_meshes()
+{
+	if(meshes.empty()) {
+		return 0;
+	}
+	return &meshes[0];
+}
+
+const Mesh * const *Scene::get_meshes() const
+{
+	if(meshes.empty()) {
+		return 0;
+	}
+	return &meshes[0];
+}
+
+Light *Scene::get_lights()
+{
+	if(lights.empty()) {
+		return 0;
+	}
+	return &lights[0];
+}
+
+const Light *Scene::get_lights() const
+{
+	if(lights.empty()) {
+		return 0;
+	}
+	return &lights[0];
 }
 
 Material *Scene::get_materials()

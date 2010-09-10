@@ -1,6 +1,12 @@
 #ifndef COMMON_H_
 #define COMMON_H_
 
+/* error threshold */
+#define EPSILON		1e-5
+
+/* minimum trace energy threshold */
+#define MIN_ENERGY	0.001
+
 /* primary ray magnitude */
 #define RAY_MAG		500.0
 

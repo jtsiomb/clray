@@ -41,6 +41,10 @@ inline Vector3 operator *(const Vector3 &vec, float s)
 	return Vector3(vec.x * s, vec.y * s, vec.z * s);
 }
 
+inline Vector3 operator /(const Vector3 &vec, float s)
+{
+	return Vector3(vec.x / s, vec.y / s, vec.z / s);
+}
 
 inline float dot(const Vector3 &a, const Vector3 &b)
 {
@@ -50,4 +54,9 @@ inline float dot(const Vector3 &a, const Vector3 &b)
 inline Vector3 cross(const Vector3 &a, const Vector3 &b)
 {
 	return Vector3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+}
+
+inline Vector3 reflect(const Vector3 &v, const Vector3 &n)
+{
+	return n * (2.0 * dot(v, n)) - v;
 }

@@ -69,7 +69,6 @@ struct KDNode {
 };
 
 #define MIN_ENERGY	0.001
-#define EPSILON		1e-5
 
 float4 shade(struct Ray ray, struct Scene *scn, const struct SurfPoint *sp, read_only image2d_t kdimg);
 bool find_intersection(struct Ray ray, const struct Scene *scn, struct SurfPoint *sp, read_only image2d_t kdimg);
@@ -252,7 +251,6 @@ bool intersect(struct Ray ray, global const struct Face *face, struct SurfPoint 
 
 	if(bc_sum < 1.0 - EPSILON || bc_sum > 1.0 + EPSILON) {
 		return false;
-		bc *= 1.2;
 	}
 
 	sp->t = t;
