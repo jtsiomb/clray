@@ -1,5 +1,6 @@
 #include <string.h>
 #include <assert.h>
+#include <limits.h>
 #include "rt.h"
 #include "ogl.h"
 #include "vector.h"
@@ -25,7 +26,10 @@ static float *fb;
 static unsigned int tex;
 static Scene *scn;
 static const Ray *prim_rays;
+static int max_iter;
 
+static RenderStats *rstat;
+static int cur_ray_aabb_tests, cur_ray_triangle_tests;
 
 bool init_dbg_renderer(int width, int height, Scene *scene, unsigned int texid)
 {
@@ -40,6 +44,9 @@ bool init_dbg_renderer(int width, int height, Scene *scene, unsigned int texid)
 	ysz = height;
 	tex = texid;
 	scn = scene;
+
+	rstat = (RenderStats*)get_render_stats();
+
 	return true;
 }
 
@@ -58,7 +65,12 @@ void dbg_render(const float *xform, const float *invtrans_xform, int num_threads
 {
 	unsigned long t0 = get_msec();
 
-	int iter = get_render_option_int(ROPT_ITER);
+	max_iter = get_render_option_int(ROPT_ITER);
+
+	// initialize render-stats
+	memset(rstat, 0, sizeof *rstat);
+	rstat->min_aabb_tests = rstat->min_triangle_tests = INT_MAX;
+	rstat->max_aabb_tests = rstat->max_triangle_tests = 0;
 
 	int offs = 0;
 	for(int i=0; i<ysz; i++) {
@@ -66,17 +78,45 @@ void dbg_render(const float *xform, const float *invtrans_xform, int num_threads
 			Ray ray = prim_rays[offs];
 			transform_ray(&ray, xform, invtrans_xform);
 
-			trace_ray(fb + offs * 3, ray, iter, 1.0);
+			cur_ray_aabb_tests = cur_ray_triangle_tests = 0;
+
+			trace_ray(fb + offs * 3, ray, max_iter, 1.0);
 			offs++;
+
+			// update stats as needed
+			if(cur_ray_aabb_tests < rstat->min_aabb_tests) {
+				rstat->min_aabb_tests = cur_ray_aabb_tests;
+			}
+			if(cur_ray_aabb_tests > rstat->max_aabb_tests) {
+				rstat->max_aabb_tests = cur_ray_aabb_tests;
+			}
+			if(cur_ray_triangle_tests < rstat->min_triangle_tests) {
+				rstat->min_triangle_tests = cur_ray_triangle_tests;
+			}
+			if(cur_ray_triangle_tests > rstat->max_triangle_tests) {
+				rstat->max_triangle_tests = cur_ray_triangle_tests;
+			}
+			rstat->prim_rays++;
+			rstat->aabb_tests += cur_ray_aabb_tests;
+			rstat->triangle_tests += cur_ray_triangle_tests;
 		}
 	}
+
+	unsigned long t1 = get_msec();
 
 	glPushAttrib(GL_TEXTURE_BIT);
 	glBindTexture(GL_TEXTURE_2D, tex);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, xsz, ysz, GL_RGB, GL_FLOAT, fb);
 	glPopAttrib();
+	glFinish();
 
-	printf("rendered in %lu msec\n", get_msec() - t0);
+	rstat->render_time = t1 - t0;
+	rstat->tex_update_time = get_msec() - t1;
+
+	rstat->rays_cast = rstat->prim_rays + rstat->refl_rays + rstat->shadow_rays;
+	rstat->rays_per_sec = 1000 * rstat->rays_cast / rstat->render_time;
+	rstat->avg_aabb_tests = (float)rstat->aabb_tests / (float)rstat->rays_cast;
+	rstat->avg_triangle_tests = (float)rstat->triangle_tests / (float)rstat->rays_cast;
 }
 
 static void trace_ray(float *pixel, const Ray &ray, int iter, float energy)
@@ -120,6 +160,7 @@ static void shade(float *pixel, const Ray &ray, const SurfPoint &sp, int iter, f
 		shadowray.dir[2] = ldir.z;
 
 		if(!cast_shadows || !find_intersection(shadowray, scn, scn->kdtree, 0)) {
+			rstat->brdf_evals++;
 
 			ldir.normalize();
 
@@ -139,6 +180,10 @@ static void shade(float *pixel, const Ray &ray, const SurfPoint &sp, int iter, f
 			scol[0] += mat->ks[0] * spec;
 			scol[1] += mat->ks[1] * spec;
 			scol[2] += mat->ks[2] * spec;
+		}
+
+		if(cast_shadows) {
+			rstat->shadow_rays++;
 		}
 	}
 
@@ -164,6 +209,8 @@ static void shade(float *pixel, const Ray &ray, const SurfPoint &sp, int iter, f
 		scol[0] += rcol[0] * mat->ks[0] * mat->kr;
 		scol[1] += rcol[1] * mat->ks[1] * mat->kr;
 		scol[2] += rcol[2] * mat->ks[2] * mat->kr;
+
+		rstat->refl_rays++;
 	}
 
 	pixel[0] = dcol[0] + scol[0];
@@ -210,6 +257,8 @@ static bool find_intersection(const Ray &ray, const Scene *scn, const KDNode *kd
 
 static bool ray_aabb_test(const Ray &ray, const AABBox &aabb)
 {
+	cur_ray_aabb_tests++;
+
 	if(ray.origin[0] >= aabb.min[0] && ray.origin[1] >= aabb.min[1] && ray.origin[2] >= aabb.min[2] &&
 			ray.origin[0] < aabb.max[0] && ray.origin[1] < aabb.max[1] && ray.origin[2] < aabb.max[2]) {
 		return true;
@@ -252,6 +301,8 @@ static bool ray_aabb_test(const Ray &ray, const AABBox &aabb)
 
 static bool ray_triangle_test(const Ray &ray, const Face *face, SurfPoint *sp)
 {
+	cur_ray_triangle_tests++;
+
 	Vector3 origin = ray.origin;
 	Vector3 dir = ray.dir;
 	Vector3 norm = face->normal;

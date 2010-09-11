@@ -35,6 +35,7 @@ static int global_size;
 
 
 static RendInfo rinf;
+static RenderStats rstat;
 static int saved_iter_val;
 
 static long timing_sample_sum;
@@ -209,6 +210,31 @@ void set_xform(float *matrix, float *invtrans)
 const RendInfo *get_render_info()
 {
 	return &rinf;
+}
+
+const RenderStats *get_render_stats()
+{
+	return &rstat;
+}
+
+void print_render_stats(FILE *fp)
+{
+	fprintf(fp, "-- render stats --\n");
+	fprintf(fp, "> timing\n");
+	fprintf(fp, "   render time (msec): %lu\n", rstat.render_time);
+	fprintf(fp, "   tex update time (msec): %lu\n", rstat.tex_update_time);
+	fprintf(fp, "> counters\n");
+	fprintf(fp, "   AABB tests: %d\n", rstat.aabb_tests);
+	fprintf(fp, "   AABB tests per ray (min/max/avg): %d/%d/%f\n",
+			rstat.min_aabb_tests, rstat.max_aabb_tests, rstat.avg_aabb_tests);
+	fprintf(fp, "   triangle tests: %d\n", rstat.triangle_tests);
+	fprintf(fp, "   triangle tests per ray (min/max/avg): %d/%d/%f\n",
+			rstat.min_triangle_tests, rstat.max_triangle_tests, rstat.avg_triangle_tests);
+	fprintf(fp, "   rays cast: %dp %dr %ds (sum: %d)\n", rstat.prim_rays,
+			rstat.refl_rays, rstat.shadow_rays, rstat.rays_cast);
+	fprintf(fp, "   rays per second: %d\n", rstat.rays_per_sec);
+	fprintf(fp, "   BRDF evaluations: %d\n", rstat.brdf_evals);
+	fputc('\n', fp);
 }
 
 void set_render_option(int opt, bool val)

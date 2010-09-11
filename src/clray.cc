@@ -198,6 +198,7 @@ void disp()
 		if(!dbg_glrender) {
 			if(dbg_nocl) {
 				dbg_render(mat.m, inv_trans.m);
+				print_render_stats();
 			} else {
 				if(!render()) {
 					exit(1);
