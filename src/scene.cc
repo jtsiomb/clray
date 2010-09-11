@@ -20,6 +20,7 @@ static bool build_kdtree(KDNode *kd, const Face *faces, int level = 0);
 static float eval_cost(const Face *faces, const int *face_idx, int num_faces, const AABBox &aabb, int axis);
 static void free_kdtree(KDNode *node);
 static void print_item_counts(const KDNode *node, int level);
+static int split_face(const Face *inface, int axis, Face *face1, Face *face2);
 
 
 static int accel_param[NUM_ACCEL_PARAMS] = {
@@ -589,3 +590,31 @@ static void print_item_counts(const KDNode *node, int level)
 	print_item_counts(node->left, level + 1);
 	print_item_counts(node->right, level + 1);
 }
+/*
+#define SWAP(a, b, type)	\
+	do { \
+		type tmp = a; \
+		a = b; \
+		b = tmp; \
+	} while(0)
+
+static bool clip_face(const Face *inface, float splitpos, int axis, Face *face1, Face *face2)
+{
+	assert(inface && face1 && face2);
+	assert(inface != face1 && inface != face2);
+	assert(axis >= 0 && axis < 3);
+
+	std::vector<Vertex> verts;
+
+	// find the edges that must be split
+	for(int i=0; i<3; i++) {
+		verts.push_back(inface->v[i]);
+
+		float start = inface->v[i].pos[axis];
+		float end = inface->v[(i + 1) % 3].pos[axis];
+
+		if((splitpos >= start && splitpos < end) || (splitpos >= end && splitpos < start)) {
+
+		}
+	}
+}*/

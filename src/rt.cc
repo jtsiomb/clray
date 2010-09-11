@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <limits.h>
 #include <assert.h>
 #include "rt.h"
 #include "ogl.h"
@@ -40,8 +41,6 @@ static int saved_iter_val;
 
 static long timing_sample_sum;
 static long num_timing_samples;
-
-extern bool dbg_frame_time;
 
 
 bool init_renderer(int xsz, int ysz, Scene *scn, unsigned int tex)
@@ -137,9 +136,12 @@ void destroy_renderer()
 
 bool render()
 {
-	// XXX do we need to call glFinish ?
-
 	long tm0 = get_msec();
+
+	// initialize render-stats
+	memset(&rstat, 0, sizeof rstat);
+	rstat.min_aabb_tests = rstat.min_triangle_tests = INT_MAX;
+	rstat.max_aabb_tests = rstat.max_triangle_tests = 0;
 
 #ifdef CLGL_INTEROP
 	cl_event ev;
@@ -180,13 +182,11 @@ bool render()
 	unmap_mem_buffer(mbuf);
 #endif
 
-	long msec = get_msec() - tm0;
-	timing_sample_sum += msec;
+	rstat.render_time = get_msec() - tm0;
+
+	timing_sample_sum += rstat.render_time;
 	num_timing_samples++;
 
-	if(dbg_frame_time) {
-		printf("rendered in %ld msec\n", msec);
-	}
 	return true;
 }
 

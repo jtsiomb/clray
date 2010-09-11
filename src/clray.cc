@@ -203,6 +203,11 @@ void disp()
 				if(!render()) {
 					exit(1);
 				}
+
+				if(dbg_frame_time) {
+					const RenderStats *rstat = get_render_stats();
+					printf("render time (msec): %lu\n", rstat->render_time);
+				}
 			}
 			need_update = false;
 		}
@@ -242,10 +247,7 @@ void reshape(int x, int y)
 {
 	glViewport(0, 0, x, y);
 
-	/* reallocate the framebuffer */
-	/*delete [] fb;
-	fb = new float[x * y * 4];
-	set_framebuffer(fb, x, y);*/
+	/* TODO reallocate the framebuffer to fit the window */
 }
 
 void idle()
