@@ -1,10 +1,12 @@
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 #include <float.h>
 #include <assert.h>
 #include <map>
 #include "scene.h"
 #include "ogl.h"
+#include "vector.h"
 
 #define CHECK_AABB(aabb)	\
 	assert(aabb.max[0] >= aabb.min[0] && aabb.max[1] >= aabb.min[1] && aabb.max[2] >= aabb.min[2])
@@ -20,7 +22,8 @@ static bool build_kdtree(KDNode *kd, const Face *faces, int level = 0);
 static float eval_cost(const Face *faces, const int *face_idx, int num_faces, const AABBox &aabb, int axis);
 static void free_kdtree(KDNode *node);
 static void print_item_counts(const KDNode *node, int level);
-static int split_face(const Face *inface, int axis, Face *face1, Face *face2);
+static int clip_face(const Face &inface, float splitpos, int axis, int sign, Face *faces);
+static float calc_sq_area(const Vector3 &a, const Vector3 &b, const Vector3 &c);
 
 
 static int accel_param[NUM_ACCEL_PARAMS] = {
@@ -37,25 +40,6 @@ void set_accel_param(int p, int v)
 	accel_param[p] = v;
 }
 
-
-#define FEQ(a, b)	(fabs((a) - (b)) < 1e-8)
-bool Face::operator ==(const Face &f) const
-{
-	for(int i=0; i<3; i++) {
-		for(int j=0; j<3; j++) {
-			if(!FEQ(v[i].pos[j], f.v[i].pos[j])) {
-				return false;
-			}
-			if(!FEQ(v[i].normal[j], f.v[i].normal[j])) {
-				return false;
-			}
-		}
-		if(!FEQ(normal[i], f.normal[i])) {
-			return false;
-		}
-	}
-	return true;
-}
 
 float AABBox::calc_surface_area() const
 {
@@ -590,31 +574,122 @@ static void print_item_counts(const KDNode *node, int level)
 	print_item_counts(node->left, level + 1);
 	print_item_counts(node->right, level + 1);
 }
-/*
-#define SWAP(a, b, type)	\
+
+#define SGN(x)		((x) >= 0 ? 1 : -1)
+#define INSIDE(x)	(SGN((x) - (splitpos)) == sign)
+#define OUTSIDE(x)	(!INSIDE(x))
+
+#define LERPV3(res, a, b, t) \
 	do { \
-		type tmp = a; \
-		a = b; \
-		b = tmp; \
+		(res)[0] = (a)[0] + ((b)[0] - (a)[0]) * (t); \
+		(res)[1] = (a)[1] + ((b)[1] - (a)[1]) * (t); \
+		(res)[2] = (a)[2] + ((b)[2] - (a)[2]) * (t); \
 	} while(0)
 
-static bool clip_face(const Face *inface, float splitpos, int axis, Face *face1, Face *face2)
+#define NORMALIZE(v)	\
+	do { \
+		float mag = (float)sqrt((v)[0] * (v)[0] + (v)[1] * (v)[1] + (v)[2] * (v)[2]); \
+		(v)[0] /= mag; \
+		(v)[1] /= mag; \
+		(v)[2] /= mag; \
+	} while(0)
+
+static int clip_face(const Face &inface, float splitpos, int axis, int sign, Face *faces)
 {
-	assert(inface && face1 && face2);
-	assert(inface != face1 && inface != face2);
 	assert(axis >= 0 && axis < 3);
 
 	std::vector<Vertex> verts;
+	bool clipped = false;
 
-	// find the edges that must be split
 	for(int i=0; i<3; i++) {
-		verts.push_back(inface->v[i]);
+		const Vertex *vstart = inface.v + i;
+		const Vertex *vend = inface.v + ((i + 1) % 3);
 
-		float start = inface->v[i].pos[axis];
-		float end = inface->v[(i + 1) % 3].pos[axis];
+		float start = vstart->pos[axis];
+		float end = vend->pos[axis];
 
-		if((splitpos >= start && splitpos < end) || (splitpos >= end && splitpos < start)) {
+		if(OUTSIDE(start) && INSIDE(end)) {
+			float t = (splitpos - start) / (end - start);
 
+			Vertex newv;
+			memset(&newv, 0, sizeof newv);
+			LERPV3(newv.pos, vstart->pos, vend->pos, t);
+			LERPV3(newv.normal, vstart->normal, vend->normal, t);
+			LERPV3(newv.tex, vstart->tex, vend->tex, t);
+			NORMALIZE(newv.normal);
+
+			verts.push_back(newv);
+			clipped = true;
+
+		} else if(INSIDE(start) && INSIDE(end)) {
+			verts.push_back(inface.v[i]);
+		} else if(INSIDE(start) && OUTSIDE(end)) {
+			verts.push_back(inface.v[i]);
+
+			float t = (splitpos - start) / (end - start);
+
+			Vertex newv;
+			memset(&newv, 0, sizeof newv);
+			LERPV3(newv.pos, vstart->pos, vend->pos, t);
+			LERPV3(newv.normal, vstart->normal, vend->normal, t);
+			LERPV3(newv.tex, vstart->tex, vend->tex, t);
+			NORMALIZE(newv.normal);
+
+			verts.push_back(newv);
+			clipped = true;
 		}
 	}
-}*/
+
+	if(!clipped) {
+		return 0;
+	}
+
+	assert(verts.size() < 5);
+	bool quad = verts.size() > 3;
+
+	if(!quad) {
+		faces[0] = inface;
+		faces[0].v[0] = verts[0];
+		faces[0].v[1] = verts[1];
+		faces[0].v[2] = verts[2];
+		return 1;
+	}
+
+	/* calculate triangle areas for both possible splits and pick the one
+	 * with the smallest absolute difference to avoid slivers.
+	 */
+	float area1, area2;
+
+	area1 = calc_sq_area(verts[0].pos, verts[1].pos, verts[2].pos);
+	area2 = calc_sq_area(verts[0].pos, verts[2].pos, verts[3].pos);
+	float s1diff = fabs(area1 - area2);
+
+	area1 = calc_sq_area(verts[0].pos, verts[1].pos, verts[3].pos);
+	area2 = calc_sq_area(verts[1].pos, verts[2].pos, verts[3].pos);
+	float s2diff = fabs(area1 - area2);
+
+	faces[0] = faces[1] = inface;
+	if(s1diff < s2diff) {
+		faces[0].v[0] = verts[0];
+		faces[0].v[1] = verts[1];
+		faces[0].v[2] = verts[2];
+		faces[1].v[0] = verts[0];
+		faces[1].v[1] = verts[2];
+		faces[1].v[2] = verts[3];
+	} else {
+		faces[0].v[0] = verts[0];
+		faces[0].v[1] = verts[1];
+		faces[0].v[2] = verts[3];
+		faces[1].v[0] = verts[1];
+		faces[1].v[1] = verts[2];
+		faces[1].v[2] = verts[3];
+	}
+	return 2;
+}
+
+static float calc_sq_area(const Vector3 &a, const Vector3 &b, const Vector3 &c)
+{
+	Vector3 v1 = b - a;
+	Vector3 v2 = c - a;
+	return cross(v1, v2).lengthsq();
+}
