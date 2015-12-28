@@ -15,17 +15,20 @@ static const char *ocl_errstr[] = {
 	"CL_IMAGE_FORMAT_MISMATCH",
 	"CL_IMAGE_FORMAT_NOT_SUPPORTED",
 	"CL_BUILD_PROGRAM_FAILURE",
-	"CL_MAP_FAILURE",						/* 12 */
+	"CL_MAP_FAILURE",
+	"CL_MISALIGNED_SUB_BUFFER_OFFSET",
+	"CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST",
+	"CL_COMPILE_PROGRAM_FAILURE",
+	"CL_LINKER_NOT_AVAILABLE",
+	"CL_LINK_PROGRAM_FAILURE",
+	"CL_DEVICE_PARTITION_FAILED",
+	"CL_KERNEL_ARG_INFO_NOT_AVAILABLE",		/* 19 */
 
-	"<unknown error>", "<unknown error>",	/* 13, 14 */
-	"<unknown error>", "<unknown error>",	/* 15, 16 */
-	"<unknown error>", "<unknown error>",	/* 17, 18 */
-	"<unknown error>", "<unknown error>",	/* 19, 20 */
-	"<unknown error>", "<unknown error>",	/* 21, 22 */
-	"<unknown error>", "<unknown error>",	/* 23, 24 */
-	"<unknown error>", "<unknown error>",	/* 25, 26 */
-	"<unknown error>", "<unknown error>",	/* 27, 28 */
-	"<unknown error>",						/* 29 */
+	"<unknown error>", "<unknown error>",	/* 20, 21 */
+	"<unknown error>", "<unknown error>",	/* 22, 23 */
+	"<unknown error>", "<unknown error>",	/* 24, 25 */
+	"<unknown error>", "<unknown error>",	/* 26, 27 */
+	"<unknown error>", "<unknown error>",	/* 28, 29 */
 
 	"CL_INVALID_VALUE",						/* 30 */
 	"CL_INVALID_DEVICE_TYPE",
@@ -60,5 +63,10 @@ static const char *ocl_errstr[] = {
 	"CL_INVALID_GL_OBJECT",
 	"CL_INVALID_BUFFER_SIZE",
 	"CL_INVALID_MIP_LEVEL",
-	"CL_INVALID_GLOBAL_WORK_SIZE"
+	"CL_INVALID_GLOBAL_WORK_SIZE",
+	"CL_INVALID_PROPERTY",
+	"CL_INVALID_IMAGE_DESCRIPTOR",
+	"CL_INVALID_COMPILER_OPTIONS",
+	"CL_INVALID_LINKER_OPTIONS",
+	"CL_INVALID_DEVICE_PARTITION_COUNT"		/* 68 */
 };

@@ -18,8 +18,6 @@ struct Face {
 	float normal[4];
 	int matid;
 	int padding[3];
-
-	bool operator ==(const Face &f) const;
 };
 
 struct Material {

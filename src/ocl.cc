@@ -1,5 +1,7 @@
 #define OCL_CC_
 
+#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -127,6 +129,11 @@ void destroy_opencl()
 		clReleaseContext(ctx);
 		ctx = 0;
 	}
+}
+
+void finish_opencl()
+{
+	clFinish(cmdq);
 }
 
 

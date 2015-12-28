@@ -182,7 +182,10 @@ bool render()
 	unmap_mem_buffer(mbuf);
 #endif
 
+	finish_opencl();
+
 	rstat.render_time = get_msec() - tm0;
+	printf("FOO: %ld msec\n", rstat.render_time);
 
 	timing_sample_sum += rstat.render_time;
 	num_timing_samples++;
