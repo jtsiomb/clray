@@ -17,7 +17,7 @@ Copyright (C) John Tsiombikas <nuclear@member.fsf.org>
 
 Clray is free software; feel free to use, modify, and/or redistribute it, under
 the terms of the GNU General Public License version 3, or (at your option) any
-more recent version published by the Free Software Foundation. See COPYING for
+later version published by the Free Software Foundation. See COPYING for
 details.
 
 Material file format extensions
