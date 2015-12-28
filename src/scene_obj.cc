@@ -27,7 +27,7 @@
 	CMD(KA),		\
 	CMD(KD),		\
 	CMD(KS),		\
-	CMD(KR),		\
+	CMD(NR),		\
 	CMD(NS),		\
 	CMD(NI),		\
 	CMD(D),			\
@@ -70,7 +70,7 @@ struct obj_mat {
 	float shininess;	// Ns
 	float ior;			// Ni
 	float alpha;		// d, Tr
-	float refl;			// Kr (my extesnsion)
+	float refl;			// Nr (my extesnsion)
 
 	std::string tex_dif, tex_spec, tex_shin, tex_alpha;	// map_Kd, map_Ks, map_Ns, map_d
 	std::string tex_refl;	// refl -type sphere|cube file
@@ -415,7 +415,7 @@ static bool read_materials(FILE *fp, std::vector<obj_mat> *vmtl)
 			parse_color(&mat.specular);
 			break;
 
-		case CMD_KR:
+		case CMD_NR:
 			if((tok = strtok(0, SEP)) && is_float(tok)) {
 				mat.refl = atof(tok);
 			}
