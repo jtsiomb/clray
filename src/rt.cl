@@ -269,8 +269,8 @@ bool intersect_aabb(struct Ray ray, struct AABBox aabb)
 	}
 
 	float4 bbox[2] = {
-		aabb.min.x, aabb.min.y, aabb.min.z, 0,
-		aabb.max.x, aabb.max.y, aabb.max.z, 0
+		{aabb.min.x, aabb.min.y, aabb.min.z, 0},
+		{aabb.max.x, aabb.max.y, aabb.max.z, 0}
 	};
 
 	int xsign = (int)(ray.dir.x < 0.0);

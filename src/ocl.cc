@@ -652,7 +652,16 @@ static int select_device(struct device_info *dev_inf, int (*devcmp)(struct devic
 		printf(" (%s)\n", buf);
 	}
 
-	if((ret = clGetDeviceIDs(plat[0], CL_DEVICE_TYPE_ALL, 32, dev, &num_dev)) != 0) {
+	unsigned int icd = 0;
+	char *icd_env = getenv("OCL_ICD");
+	if(icd_env) {
+		icd = atoi(icd_env);
+		if(icd < 0 || icd >= num_plat) {
+			icd = 0;
+		}
+	}
+
+	if((ret = clGetDeviceIDs(plat[icd], CL_DEVICE_TYPE_ALL, 32, dev, &num_dev)) != 0) {
 		fprintf(stderr, "clGetDeviceIDs failed: %s\n", clstrerror(ret));
 		return -1;
 	}
